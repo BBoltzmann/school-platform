@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: schoolplatform-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: schoolplatform
+      POSTGRES_USER: schoolplatform
+      POSTGRES_PASSWORD: schoolplatform_dev_password
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - schoolplatform_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schoolplatform -d schoolplatform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  schoolplatform_postgres_data:

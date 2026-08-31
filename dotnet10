@@ -1,0 +1,7 @@
+#!/bin/zsh
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+export DOTNET_ROOT="$ROOT/.dotnet"
+
+exec "$ROOT/.dotnet/dotnet" "$@"
