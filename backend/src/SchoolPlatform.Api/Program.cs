@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using SchoolPlatform.Application.Platform;
 using SchoolPlatform.Infrastructure.Persistence;
+using SchoolPlatform.Infrastructure.Platform;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +12,10 @@ var connectionString =
 
 builder.Services.AddDbContext<SchoolPlatformDbContext>(options =>
     options.UseNpgsql(connectionString));
+
+builder.Services.AddScoped<
+    ISchoolBootstrapService,
+    SchoolBootstrapService>();
 
 var app = builder.Build();
 
@@ -42,6 +48,38 @@ app.MapGet("/health", async (
             statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
+if (app.Environment.IsDevelopment())
+{
+    app.MapPost(
+        "/api/platform/bootstrap-school",
+        async (
+            BootstrapSchoolRequest request,
+            ISchoolBootstrapService bootstrapService,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var result =
+                    await bootstrapService.BootstrapAsync(
+                        request,
+                        cancellationToken);
+
+                return Results.Created(
+                    $"/api/platform/tenants/{result.TenantId}",
+                    result);
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Conflict(new
+                {
+                    error = exception.Message
+                });
+            }
+        });
+}
+
 app.Run();
 
-public partial class Program;
+public partial class Program
+{
+}
