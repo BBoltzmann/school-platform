@@ -129,3 +129,12 @@
 /Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/obj/Debug/net10.0/SchoolPlatform.Api.pdb
 /Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/obj/Debug/net10.0/SchoolPlatform.Api.genruntimeconfig.cache
 /Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/obj/Debug/net10.0/ref/SchoolPlatform.Api.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/bin/Debug/net10.0/Microsoft.AspNetCore.Authentication.JwtBearer.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/bin/Debug/net10.0/Microsoft.Bcl.Cryptography.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/bin/Debug/net10.0/Microsoft.IdentityModel.Abstractions.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/bin/Debug/net10.0/Microsoft.IdentityModel.JsonWebTokens.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/bin/Debug/net10.0/Microsoft.IdentityModel.Logging.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/bin/Debug/net10.0/Microsoft.IdentityModel.Protocols.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/bin/Debug/net10.0/Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/bin/Debug/net10.0/Microsoft.IdentityModel.Tokens.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Api/bin/Debug/net10.0/System.IdentityModel.Tokens.Jwt.dll

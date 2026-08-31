@@ -10,10 +10,11 @@
 using System;
 using System.Reflection;
 
+[assembly: Microsoft.Extensions.Configuration.UserSecrets.UserSecretsIdAttribute("e9d9904b-613a-4c46-a6c6-a4ade1e59c22")]
 [assembly: System.Reflection.AssemblyCompanyAttribute("SchoolPlatform.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+fbee57d47f8e3666516b45ac571cc74a08fd06bc")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8c7aef06dc0786c32ea98131ac5716dbc53b6de2")]
 [assembly: System.Reflection.AssemblyProductAttribute("SchoolPlatform.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SchoolPlatform.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
