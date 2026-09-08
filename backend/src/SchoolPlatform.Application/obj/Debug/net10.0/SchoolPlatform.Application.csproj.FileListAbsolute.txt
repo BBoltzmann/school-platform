@@ -13,3 +13,4 @@
 /Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Application/obj/Debug/net10.0/refint/SchoolPlatform.Application.dll
 /Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Application/obj/Debug/net10.0/SchoolPlatform.Application.pdb
 /Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Application/obj/Debug/net10.0/ref/SchoolPlatform.Application.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Application/obj/Debug/net10.0/SchoolPlatform.Application.sourcelink.json

@@ -15,3 +15,4 @@
 /Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Infrastructure/obj/Debug/net10.0/refint/SchoolPlatform.Infrastructure.dll
 /Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Infrastructure/obj/Debug/net10.0/SchoolPlatform.Infrastructure.pdb
 /Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Infrastructure/obj/Debug/net10.0/ref/SchoolPlatform.Infrastructure.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Infrastructure/obj/Debug/net10.0/SchoolPlatform.Infrastructure.sourcelink.json
