@@ -2,9 +2,7 @@ import { cookies } from "next/headers";
 
 import type { SessionContext } from "@/types/session";
 
-const API_URL =
-  process.env.SCHOOL_PLATFORM_API_URL ??
-  "http://localhost:5221";
+import { getBackendUrl } from "@/lib/api/backend-url";
 
 export async function getSessionContext(): Promise<SessionContext | null> {
   const cookieStore = await cookies();
@@ -18,7 +16,7 @@ export async function getSessionContext(): Promise<SessionContext | null> {
 
   try {
     const response = await fetch(
-      `${API_URL}/api/tenant/context`,
+      `${getBackendUrl()}/api/tenant/context`,
       {
         method: "GET",
         headers: {

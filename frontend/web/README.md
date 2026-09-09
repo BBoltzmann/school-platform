@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# School Platform web frontend
 
-## Getting Started
+Run `npm install` when dependencies are missing, then `npm run dev` from
+`frontend/web`. Use Node.js 20.9 or newer. Run `npm run build` before deploying.
 
-First, run the development server:
+## Backend configuration
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Set the server-only variable `SCHOOL_PLATFORM_API_URL` to the backend origin.
+For Vercel Production (and Preview if it should use production), set:
+
+```text
+SCHOOL_PLATFORM_API_URL=https://school-platform-production-09fa.up.railway.app
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Use `frontend/web` as the Vercel project root. Redeploy after changing environment
+variables so the deployment receives the new value. Do not append `/api` or
+`/api/auth/login`. Trailing slashes and surrounding whitespace are normalized.
+Production requires an explicit value; development defaults to
+`http://localhost:5221`. An ignored `.env.local` only configures local runs.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Login flow and diagnostics
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The browser posts email, password, and `tenantSlug: "antioch-college"` to the
+same-origin `/api/auth/login` BFF. The BFF posts to the configured backend's
+`/api/auth/login` and stores the access token in an HttpOnly, SameSite=Lax cookie
+with path `/`, Secure in production, and the backend expiry. The browser then
+opens `/app/antioch-college/dashboard`. The tenant layout validates that cookie
+by calling `/api/tenant/context` on the same backend. Authenticated API calls
+use that same origin and send the token as a Bearer credential. Logout expires
+the cookie at the same path.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Only a backend 401 is reported as invalid credentials. Configuration errors
+return 503; other upstream errors, timeouts, or malformed success responses
+return 502. Vercel function logs record the upstream origin and HTTP error status
+without credentials or tokens. If direct Railway login succeeds, compare the
+BFF status and logged origin before changing any credentials. A successful
+frontend build does not verify runtime connectivity or deployment environment
+variables.

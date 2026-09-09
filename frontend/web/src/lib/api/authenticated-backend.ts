@@ -1,8 +1,6 @@
 import { cookies } from "next/headers";
 
-const API_URL =
-  process.env.SCHOOL_PLATFORM_API_URL ??
-  "http://localhost:5221";
+import { getBackendUrl } from "@/lib/api/backend-url";
 
 export async function authenticatedBackendFetch(
   path: string,
@@ -17,7 +15,7 @@ export async function authenticatedBackendFetch(
     return null;
   }
 
-  return fetch(`${API_URL}${path}`, {
+  return fetch(`${getBackendUrl()}${path}`, {
     ...options,
     headers: {
       ...options.headers,
