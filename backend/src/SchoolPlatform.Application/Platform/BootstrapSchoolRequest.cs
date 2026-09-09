@@ -6,4 +6,5 @@ public sealed record BootstrapSchoolRequest(
     string CampusName,
     string AdminEmail,
     string AdminFirstName,
-    string AdminLastName);
+    string AdminLastName,
+    string? AdminPassword = null);

@@ -1,4 +1,9 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+using SchoolPlatform.Api.Services;
+using SchoolPlatform.Application.Email;
 using System.Text;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -71,6 +76,20 @@ builder.Services
         JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var id = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (!Guid.TryParse(id, out var userId)) { context.Fail("Invalid session."); return; }
+                var database = context.HttpContext.RequestServices.GetRequiredService<SchoolPlatformDbContext>();
+                var user = await database.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId,
+                    context.HttpContext.RequestAborted);
+                if (user is null || !user.IsActive || (user.SecurityStamp is not null
+                    && user.SecurityStamp != context.Principal?.FindFirstValue("security_stamp")))
+                    context.Fail("Session expired. Sign in again.");
+            }
+        };
         options.TokenValidationParameters =
             new TokenValidationParameters
             {
@@ -149,6 +168,25 @@ builder.Services.AddScoped<
     SchoolPlatform.Application.Fees.IFeesService,
     SchoolPlatform.Infrastructure.Fees.FeesService>();
 
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<AuthAccountLimiter>();
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<IPasswordRecoveryService, PasswordRecoveryService>();
+builder.Services.AddScoped<ISchoolSignupService, SchoolSignupService>();
+builder.Services.AddHostedService<PasswordRecoveryWorker>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Instance-wide ceiling also protects requests through Vercel's shared egress IP.
+    // Account quotas below do not trust caller-supplied forwarding headers.
+    options.AddFixedWindowLimiter("auth", limiter =>
+    {
+        limiter.PermitLimit = 120;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+    });
+});
+
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
@@ -156,6 +194,14 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+app.UseRouting();
+app.UseRateLimiter();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/auth"))
+        context.Response.Headers.CacheControl = "no-store";
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -192,8 +238,14 @@ app.MapPost(
     async (
         LoginRequest request,
         IAuthenticationService authenticationService,
+        AuthAccountLimiter limiter,
         CancellationToken cancellationToken) =>
     {
+        if (!limiter.TryAcquire("login", request.Email, request.TenantSlug))
+            return Results.Json(new { error = "Too many attempts. Please try again later." }, statusCode: 429);
+        if (!AuthInput.EmailIsValid(request.Email) || !AuthInput.SlugIsValid(request.TenantSlug?.Trim().ToLowerInvariant())
+            || string.IsNullOrEmpty(request.Password) || request.Password.Length > 128)
+            return Results.Unauthorized();
         var result =
             await authenticationService.LoginAsync(
                 request,
@@ -202,7 +254,7 @@ app.MapPost(
         return result is null
             ? Results.Unauthorized()
             : Results.Ok(result);
-    });
+    }).RequireRateLimiting("auth");
 
 app.MapGet(
         "/api/auth/me",
@@ -544,6 +596,8 @@ SchoolPlatform.Api.Endpoints.AssessmentSetupEndpoints.MapAssessmentSetupEndpoint
 SchoolPlatform.Api.Endpoints.InventoryEndpoints.MapInventoryEndpoints(app);
 
 SchoolPlatform.Api.Endpoints.FeesEndpoints.MapFeesEndpoints(app);
+
+SchoolPlatform.Api.Endpoints.AuthenticationRecoveryEndpoints.MapAuthenticationRecoveryEndpoints(app);
 
 app.Run();
 

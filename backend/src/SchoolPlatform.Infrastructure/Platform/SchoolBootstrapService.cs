@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using SchoolPlatform.Application.Authentication;
 using SchoolPlatform.Application.Platform;
 using SchoolPlatform.Domain.Identity;
 using SchoolPlatform.Domain.Tenancy;
@@ -9,10 +11,12 @@ namespace SchoolPlatform.Infrastructure.Platform;
 public sealed class SchoolBootstrapService : ISchoolBootstrapService
 {
     private readonly SchoolPlatformDbContext _database;
+    private readonly IPasswordHasher<User> _passwordHasher;
 
-    public SchoolBootstrapService(SchoolPlatformDbContext database)
+    public SchoolBootstrapService(SchoolPlatformDbContext database, IPasswordHasher<User> passwordHasher)
     {
         _database = database;
+        _passwordHasher = passwordHasher;
     }
 
     public async Task<BootstrapSchoolResult> BootstrapAsync(
@@ -26,7 +30,7 @@ public sealed class SchoolBootstrapService : ISchoolBootstrapService
                 x => x.Slug == slug,
                 cancellationToken))
         {
-            throw new InvalidOperationException(
+            throw new SchoolBootstrapConflictException(
                 $"A school with slug '{slug}' already exists.");
         }
 
@@ -35,13 +39,15 @@ public sealed class SchoolBootstrapService : ISchoolBootstrapService
                 x => x.Email == email,
                 cancellationToken);
 
+        if (request.AdminPassword is not null &&
+            (existingUser is not null || !PasswordPolicy.IsValid(request.AdminPassword)))
+            throw new SchoolBootstrapConflictException("Unable to create school with these details.");
+
         var tenant = new Tenant(
             request.SchoolName,
             slug);
 
         _database.Tenants.Add(tenant);
-
-        await _database.SaveChangesAsync(cancellationToken);
 
         var campus = new Campus(
             tenant.Id,
@@ -56,6 +62,9 @@ public sealed class SchoolBootstrapService : ISchoolBootstrapService
         {
             _database.Users.Add(user);
         }
+
+        if (request.AdminPassword is not null)
+            user.SetPasswordHash(_passwordHasher.HashPassword(user, request.AdminPassword));
 
         var membership = new TenantMembership(
             tenant.Id,

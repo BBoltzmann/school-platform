@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Eye,
@@ -13,11 +14,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export function LoginForm() {
+export function LoginForm({ initialTenantSlug = "antioch-college" }: { initialTenantSlug?: string }) {
+  const [tenantSlug, setTenantSlug] = useState(initialTenantSlug);
   const router = useRouter();
 
   const [email, setEmail] = useState(
-    "admin@antiochcollege.local"
+    initialTenantSlug === "antioch-college" ? "admin@antiochcollege.local" : ""
   );
 
   const [password, setPassword] = useState("");
@@ -47,7 +49,7 @@ export function LoginForm() {
           body: JSON.stringify({
             email,
             password,
-            tenantSlug: "antioch-college",
+            tenantSlug: tenantSlug.trim().toLowerCase(),
           }),
         }
       );
@@ -63,7 +65,7 @@ export function LoginForm() {
       }
 
       router.push(
-        "/app/antioch-college/dashboard"
+        "/"
       );
 
       router.refresh();
@@ -81,6 +83,10 @@ export function LoginForm() {
       onSubmit={handleSubmit}
       className="space-y-5"
     >
+      <label className="block space-y-2 text-sm font-medium">
+        <span>School slug</span>
+        <Input name="tenantSlug" value={tenantSlug} onChange={event => setTenantSlug(event.target.value)} minLength={3} maxLength={100} required />
+      </label>
       <div className="space-y-2">
         <label
           htmlFor="email"
@@ -115,12 +121,12 @@ export function LoginForm() {
             Password
           </label>
 
-          <button
-            type="button"
+          <Link
+            href={`/forgot-password?${new URLSearchParams({ tenantSlug })}`}
             className="text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             Forgot password?
-          </button>
+          </Link>
         </div>
 
         <div className="relative">

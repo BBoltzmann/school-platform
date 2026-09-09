@@ -20,4 +20,7 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../../src/SchoolPlatform.Application/SchoolPlatform.Application.csproj" />
+  </ItemGroup>
 </Project>

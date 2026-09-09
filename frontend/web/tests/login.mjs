@@ -50,9 +50,9 @@ test('requires production configuration and rejects API paths', async () => {
 });
 
 test('distinguishes rejected credentials from routing, server, network, and invalid-response failures', async () => {
-  for (const status of [401, 404, 500, 503]) {
+  for (const status of [401, 404, 429, 500, 503]) {
     const response = await handler({ SCHOOL_PLATFORM_API_URL: origin }, async () => new Response('', { status }))(request());
-    assert.equal(response.status, status === 401 ? 401 : 502);
+    assert.equal(response.status, status === 401 ? 401 : status === 429 ? 429 : 502);
     assert.equal((await response.json()).error.includes('Invalid email'), status === 401);
     assert.equal(response.headers.get('set-cookie'), null);
   }
@@ -61,4 +61,13 @@ test('distinguishes rejected credentials from routing, server, network, and inva
     assert.equal(response.status, 502);
     assert.equal(response.headers.get('set-cookie'), null);
   }
+});
+
+
+test('rejects cross-origin login without forwarding credentials', async () => {
+  const post = handler({}, () => assert.fail('must not fetch'));
+  const response = await post(new Request('https://frontend.example/api/auth/login', {
+    method: 'POST', headers: { origin: 'https://attacker.example' }, body: JSON.stringify(credentials),
+  }));
+  assert.equal(response.status, 403);
 });

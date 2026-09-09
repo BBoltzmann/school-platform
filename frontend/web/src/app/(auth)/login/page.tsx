@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   BookOpenCheck,
   GraduationCap,
@@ -6,7 +8,9 @@ import {
 
 import { LoginForm } from "@/components/auth/login-form";
 
-export default function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ tenantSlug?: string; reset?: string }> }) {
+  const query = await searchParams;
+  const tenantSlug = typeof query.tenantSlug === "string" ? query.tenantSlug : "antioch-college";
   return (
     <main className="grid min-h-screen bg-background lg:grid-cols-[1.05fr_0.95fr]">
       <section className="relative hidden overflow-hidden bg-black p-12 text-white lg:flex lg:flex-col lg:justify-between">
@@ -102,13 +106,13 @@ export default function LoginPage() {
             </h2>
 
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Sign in to access the Antioch
-              Royal College administration
-              portal.
+              Sign in with your school slug and account details.
             </p>
           </div>
 
-          <LoginForm />
+          {query.reset === "success" && <p role="status" className="mb-5 rounded-md bg-muted p-3 text-sm">Your password has been reset. Sign in with your new password.</p>}
+          <LoginForm initialTenantSlug={tenantSlug} />
+          {process.env.ALLOW_PUBLIC_SCHOOL_SIGNUP === "true" && <Link href="/create-school" className="mt-5 block text-center text-sm underline">Create a new school</Link>}
 
           <div className="mt-8 border-t pt-6 text-center text-xs text-muted-foreground">
             Having trouble signing in?

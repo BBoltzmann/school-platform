@@ -41,6 +41,8 @@ public sealed class User : Entity
 
     public string? PasswordHash { get; private set; }
 
+    public string? SecurityStamp { get; private set; }
+
     public bool IsActive { get; private set; } = true;
 
     public ICollection<TenantMembership> Memberships { get; private set; }
@@ -54,6 +56,7 @@ public sealed class User : Entity
                 nameof(passwordHash));
 
         PasswordHash = passwordHash;
+        SecurityStamp = Guid.NewGuid().ToString("N");
     }
 
     public void Deactivate()

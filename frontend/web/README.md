@@ -24,15 +24,26 @@ The browser posts email, password, and `tenantSlug: "antioch-college"` to the
 same-origin `/api/auth/login` BFF. The BFF posts to the configured backend's
 `/api/auth/login` and stores the access token in an HttpOnly, SameSite=Lax cookie
 with path `/`, Secure in production, and the backend expiry. The browser then
-opens `/app/antioch-college/dashboard`. The tenant layout validates that cookie
+visits `/`, which redirects to the authenticated tenant dashboard. The tenant layout validates that cookie
 by calling `/api/tenant/context` on the same backend. Authenticated API calls
 use that same origin and send the token as a Bearer credential. Logout expires
 the cookie at the same path.
 
-Only a backend 401 is reported as invalid credentials. Configuration errors
+Only a backend 401 is reported as invalid credentials; 429 is shown as a rate limit. Configuration errors
 return 503; other upstream errors, timeouts, or malformed success responses
 return 502. Vercel function logs record the upstream origin and HTTP error status
 without credentials or tokens. If direct Railway login succeeds, compare the
 BFF status and logged origin before changing any credentials. A successful
 frontend build does not verify runtime connectivity or deployment environment
 variables.
+
+## Recovery and school creation
+
+Forgot-password and reset-password pages are available at `/forgot-password` and
+`/reset-password?token=...`. Public onboarding is at `/create-school` and requires
+`ALLOW_PUBLIC_SCHOOL_SIGNUP=true` in both Vercel and Railway. Login defaults to
+`antioch-college` and also accepts the slug of a newly created school.
+
+See [authentication deployment and file-by-file changes](../../docs/authentication.md)
+for the required EF migration, SMTP environment variables, tenant/email semantics,
+and validation results. Run `npm test` for authentication regression tests.

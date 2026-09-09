@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/api/backend-url";
 
 export async function POST(request: Request) {
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) {
+    return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  }
   let body;
   try {
     body = await request.json();
@@ -41,10 +45,11 @@ export async function POST(request: Request) {
         {
           error: response.status === 401
             ? "Invalid email, password, or school."
+            : response.status === 429 ? "Too many attempts. Please try again later."
             : "The sign-in service is unavailable. Please try again later.",
         },
         {
-          status: response.status === 401 ? 401 : 502,
+          status: response.status === 401 ? 401 : response.status === 429 ? 429 : 502,
         }
       );
     }

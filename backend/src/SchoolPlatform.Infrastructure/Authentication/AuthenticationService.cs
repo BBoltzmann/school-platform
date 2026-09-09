@@ -167,6 +167,8 @@ public sealed class AuthenticationService : IAuthenticationService
                 membership.Id.ToString())
         };
 
+        claims.Add(new Claim("security_stamp", user.SecurityStamp ?? string.Empty));
+
         claims.AddRange(
             roles.Select(role =>
                 new Claim(ClaimTypes.Role, role)));
