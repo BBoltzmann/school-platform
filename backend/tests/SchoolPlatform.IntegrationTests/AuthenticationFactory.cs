@@ -12,6 +12,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SchoolPlatform.Api.Services;
 using SchoolPlatform.Application.Email;
+using SchoolPlatform.Application.Authentication;
+using SchoolPlatform.Infrastructure.Authentication;
+using System.Security.Cryptography;
 using SchoolPlatform.Application.Platform;
 using SchoolPlatform.Infrastructure.Persistence;
 
@@ -37,11 +40,13 @@ public sealed class TestEmailSender : IEmailSender
     public string LatestToken => Messages.Last().Url.Query.Split("token=")[1];
 }
 
-public sealed class AuthenticationFactory(bool allowSignup = true) : WebApplicationFactory<Program>
+public sealed class AuthenticationFactory(bool allowSignup = true, bool directResetEnabled = false) : WebApplicationFactory<Program>
 {
     private readonly SqliteConnection connection = new("Data Source=:memory:");
     private readonly string? postgresSocket = Environment.GetEnvironmentVariable("SCHOOL_AUTH_TEST_POSTGRES_SOCKET");
     private readonly string databaseName = "school_auth_test_" + Guid.NewGuid().ToString("N");
+    public bool DirectResetEnabled { get; set; } = directResetEnabled;
+    public string? DirectRecoveryCode { get; set; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     public ResetReadBarrier ResetBarrier { get; } = new();
     public TestClock Clock { get; } = new();
     public TestEmailSender Email { get; } = new();
@@ -84,6 +89,13 @@ public sealed class AuthenticationFactory(bool allowSignup = true) : WebApplicat
                     new NpgsqlConnectionStringBuilder { Host = postgresSocket, Database = databaseName,
                         Username = "school_auth_test", Pooling = false }.ConnectionString).AddInterceptors(ResetBarrier));
             }
+            services.RemoveAll<ITemporaryPasswordResetAccess>();
+            services.AddSingleton<ITemporaryPasswordResetAccess>(new TemporaryPasswordResetAccess(name => name switch
+            {
+                "TEMP_PASSWORD_RESET_ENABLED" => DirectResetEnabled ? "true" : "false",
+                "TEMP_PASSWORD_RESET_CODE" => DirectRecoveryCode,
+                _ => null,
+            }));
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
             services.RemoveAll<IEmailSender>();

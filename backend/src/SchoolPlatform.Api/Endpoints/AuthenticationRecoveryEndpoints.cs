@@ -14,6 +14,19 @@ public static class AuthenticationRecoveryEndpoints
     public static void MapAuthenticationRecoveryEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/auth").RequireRateLimiting("auth");
+        // TEMPORARY: retain the email/token endpoints below for later re-enablement in the UI.
+        group.MapPost("/direct-password-reset", async (DirectPasswordResetRequest request,
+            ITemporaryPasswordResetAccess access, IPasswordRecoveryService recovery,
+            AuthAccountLimiter limiter, CancellationToken cancellationToken) =>
+        {
+            if (!access.Enabled) return Results.NotFound();
+            if (!limiter.TryAcquire("recovery", request.Email, request.TenantSlug))
+                return Results.Json(new { error = "Too many attempts. Please try again later." }, statusCode: 429);
+            var slug = await recovery.DirectResetAsync(request, cancellationToken);
+            return slug is null
+                ? Results.BadRequest(new { error = "Unable to change password. Check the recovery details and password requirements." })
+                : Results.Ok(new { tenantSlug = slug });
+        }).RequireRateLimiting("direct-password-reset");
         group.MapPost("/forgot-password", async (ForgotPasswordRequest request, SchoolPlatformDbContext database,
             AuthAccountLimiter limiter, TimeProvider clock, CancellationToken cancellationToken) =>
         {

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/api/backend-url";
 import { RECOVERY_MESSAGE, SIGNUP_MESSAGE } from "@/lib/auth/recovery";
 
-type Action = "forgot-password" | "reset-password" | "signup";
+type Action = "direct-password-reset" | "forgot-password" | "reset-password" | "signup";
 const errors: Record<Action, string> = {
+  "direct-password-reset": "Unable to change password. Check the recovery details and password requirements.",
   "forgot-password": "Check your email address and school slug.",
   "reset-password": "This reset link is invalid or expired, or the password does not meet the requirements. Request a new link if needed.",
   signup: "Check the school details and password requirements.",
@@ -40,12 +41,13 @@ export async function publicAuthPost(request: Request, action: Action) {
       const status = [400, 404, 409, 429].includes(response.status) ? response.status : 502;
       const error = status === 429 ? "Too many attempts. Please try again later."
         : status === 409 && action === "signup" ? "This school slug is unavailable. Choose a different slug."
+        : status === 404 && action === "direct-password-reset" ? "Password recovery is currently unavailable. Contact your administrator."
         : status === 404 && action === "signup" ? "Public school creation is unavailable."
         : status === 400 ? errors[action]
         : "The authentication service is unavailable. Please try again later.";
       return NextResponse.json({ error }, { status });
     }
-    if (action === "reset-password") {
+    if (action === "reset-password" || action === "direct-password-reset") {
       const result = await response.json();
       if (typeof result?.tenantSlug !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(result.tenantSlug)) {
         throw new Error("Invalid reset response");

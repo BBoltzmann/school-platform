@@ -170,6 +170,7 @@ builder.Services.AddScoped<
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AuthAccountLimiter>();
+builder.Services.AddSingleton<ITemporaryPasswordResetAccess, TemporaryPasswordResetAccess>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<IPasswordRecoveryService, PasswordRecoveryService>();
 builder.Services.AddScoped<ISchoolSignupService, SchoolSignupService>();
@@ -177,6 +178,13 @@ builder.Services.AddHostedService<PasswordRecoveryWorker>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Temporary shared-code guessing must also be limited across different accounts.
+    options.AddFixedWindowLimiter("direct-password-reset", limiter =>
+    {
+        limiter.PermitLimit = 10;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+    });
     // Instance-wide ceiling also protects requests through Vercel's shared egress IP.
     // Account quotas below do not trust caller-supplied forwarding headers.
     options.AddFixedWindowLimiter("auth", limiter =>

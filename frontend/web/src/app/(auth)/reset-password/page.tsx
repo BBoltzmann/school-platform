@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
-import { AuthCard } from "@/components/auth/auth-card";
-import { RecoveryForm } from "@/components/auth/recovery-form";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 export default function ResetPasswordPage() {
-  return <AuthCard title="Reset password" description="Choose a new password for your account. Reset links expire after 30 minutes.">
-    <RecoveryForm mode="reset" />
-  </AuthCard>;
+  // TEMPORARY: email/token recovery implementation remains in the repository.
+  // Do not carry a legacy token into the direct-reset URL.
+  redirect("/forgot-password");
 }

@@ -1,5 +1,7 @@
 # Authentication recovery and school onboarding
 
+**Current UI:** password recovery temporarily uses the [direct recovery-code flow](temporary-password-reset.md). The email/token implementation described below is retained but is not rendered by the current recovery pages.
+
 ## Production configuration
 
 Set these in Railway's environment; do not put provider credentials in source files:

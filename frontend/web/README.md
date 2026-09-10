@@ -39,8 +39,10 @@ variables.
 
 ## Recovery and school creation
 
-Forgot-password and reset-password pages are available at `/forgot-password` and
-`/reset-password?token=...`. Public onboarding is at `/create-school` and requires
+Password recovery currently uses a temporary recovery-code form at `/forgot-password`.
+The legacy `/reset-password` page redirects there. See the
+[temporary recovery setup](../../docs/temporary-password-reset.md) for Railway flags
+and the disable switch. No recovery code is configured in the frontend. Public onboarding is at `/create-school` and requires
 `ALLOW_PUBLIC_SCHOOL_SIGNUP=true` in both Vercel and Railway. Login defaults to
 `antioch-college` and also accepts the slug of a newly created school.
 

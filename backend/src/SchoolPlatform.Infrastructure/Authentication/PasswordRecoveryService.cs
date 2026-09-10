@@ -17,7 +17,8 @@ public sealed class PasswordRecoveryService(
     IPasswordHasher<User> passwordHasher,
     IEmailSender emailSender,
     IConfiguration configuration,
-    TimeProvider clock) : IPasswordRecoveryService
+    TimeProvider clock,
+    ITemporaryPasswordResetAccess temporaryAccess) : IPasswordRecoveryService
 {
     public async Task RequestAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
     {
@@ -82,12 +83,7 @@ public sealed class PasswordRecoveryService(
                 select tenant.Slug).SingleOrDefaultAsync(cancellationToken);
             if (user is null || slug is null) return null;
 
-            // All tokens for this global identity are consumed in the same transaction.
-            // Concurrent resets serialize on these rows; a losing transaction rolls back.
-            await database.PasswordResetTokens.Where(x => x.UserId == user.Id && x.UsedAtUtc == null)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAtUtc, now), cancellationToken);
-            user.SetPasswordHash(passwordHasher.HashPassword(user, request.NewPassword));
-            await database.SaveChangesAsync(cancellationToken);
+            await ChangePasswordAsync(user, request.NewPassword, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return slug;
         }
@@ -97,6 +93,47 @@ public sealed class PasswordRecoveryService(
             await transaction.RollbackAsync(cancellationToken);
             return null;
         }
+    }
+
+    // TEMPORARY: the recovery code is a privileged, deployment-wide credential.
+    // No account lookup or mutation is allowed until the server-side code is verified.
+    public async Task<string?> DirectResetAsync(DirectPasswordResetRequest request, CancellationToken cancellationToken = default)
+    {
+        if (!temporaryAccess.Verify(request.RecoveryCode) || !PasswordPolicy.IsValid(request.NewPassword)
+            || !AuthInput.EmailIsValid(request.Email)
+            || !AuthInput.SlugIsValid(request.TenantSlug?.Trim().ToLowerInvariant())) return null;
+        var email = request.Email.Trim().ToLowerInvariant();
+        var slug = request.TenantSlug!.Trim().ToLowerInvariant();
+        await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var user = await (from candidate in database.Users
+                join membership in database.TenantMemberships on candidate.Id equals membership.UserId
+                join tenant in database.Tenants on membership.TenantId equals tenant.Id
+                where candidate.Email == email && candidate.IsActive && membership.IsActive
+                    && tenant.Slug == slug && tenant.IsActive
+                select candidate).SingleOrDefaultAsync(cancellationToken);
+            if (user is null) return null;
+            await ChangePasswordAsync(user, request.NewPassword, clock.GetUtcNow().UtcDateTime, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return slug;
+        }
+        catch (Exception exception) when (exception is PostgresException { SqlState: "40001" or "40P01" }
+            || exception.InnerException is PostgresException { SqlState: "40001" or "40P01" })
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+    }
+
+    private async Task ChangePasswordAsync(User user, string password, DateTime now, CancellationToken cancellationToken)
+    {
+        // Shared by email/token and temporary recovery: consume outstanding tokens,
+        // use the existing domain method to rotate SecurityStamp, and save atomically.
+        await database.PasswordResetTokens.Where(x => x.UserId == user.Id && x.UsedAtUtc == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAtUtc, now), cancellationToken);
+        user.SetPasswordHash(passwordHasher.HashPassword(user, password));
+        await database.SaveChangesAsync(cancellationToken);
     }
 
     private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));

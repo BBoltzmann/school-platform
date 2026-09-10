@@ -11,3 +11,17 @@ export function loginDestination(tenantSlug: string, reset = false): string {
   if (reset) query.set("reset", "success");
   return `/login?${query}`;
 }
+
+export function directResetPayload(data: FormData):
+  { error: string } | { body: { email: string; tenantSlug: string; recoveryCode: string; newPassword: string } } {
+  const newPassword = String(data.get("newPassword") ?? "");
+  const recoveryCode = String(data.get("recoveryCode") ?? "");
+  if (!recoveryCode || recoveryCode.length > 256) return { error: "Enter your recovery code." };
+  if (!validPassword(newPassword)) return { error: PASSWORD_DESCRIPTION };
+  if (newPassword !== data.get("confirmPassword")) return { error: "Passwords do not match." };
+  return { body: {
+    email: String(data.get("email") ?? "").trim(),
+    tenantSlug: String(data.get("tenantSlug") ?? "").trim().toLowerCase(),
+    recoveryCode, newPassword,
+  } };
+}
