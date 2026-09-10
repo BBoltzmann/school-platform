@@ -15,7 +15,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-export function CreateSessionDialog() {
+export function CreateSessionDialog({
+  triggerLabel = "Create Session",
+}: {
+  tenantSlug?: string;
+  triggerLabel?: string;
+}) {
   const router = useRouter();
 
   const [open, setOpen] = useState(false);
@@ -92,7 +97,7 @@ export function CreateSessionDialog() {
         render={
           <Button className="bg-tenant-primary text-black hover:bg-tenant-primary/90">
             <Plus className="mr-2 h-4 w-4" />
-            Create Session
+            {triggerLabel}
           </Button>
         }
       />

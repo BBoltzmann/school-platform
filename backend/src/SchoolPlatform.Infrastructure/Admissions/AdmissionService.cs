@@ -187,13 +187,14 @@ public sealed class AdmissionService : IAdmissionService
                 x =>
                     x.Id == request.AcademicSessionId &&
                     x.TenantId == tenantId &&
-                    x.IsActive,
+                    x.IsActive &&
+                    x.IsCurrent,
                 cancellationToken);
 
         if (session is null)
         {
             throw new InvalidOperationException(
-                "Academic session was not found.");
+                "Applications require the school's current active academic session.");
         }
 
         var level = await _database.AcademicLevels

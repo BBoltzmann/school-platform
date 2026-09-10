@@ -1,10 +1,8 @@
 "use client";
 
 import {
-  Bell,
   ChevronDown,
   LogOut,
-  Mail,
   Menu,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -60,30 +58,6 @@ export function AdminHeader({
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4">
-          <button
-            type="button"
-            className="relative rounded-md p-2 text-white/80 hover:bg-white/10"
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5" />
-
-            <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-tenant-primary px-1 text-[9px] font-bold text-black">
-              3
-            </span>
-          </button>
-
-          <button
-            type="button"
-            className="relative hidden rounded-md p-2 text-white/80 hover:bg-white/10 sm:block"
-            aria-label="Messages"
-          >
-            <Mail className="h-5 w-5" />
-
-            <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-tenant-primary px-1 text-[9px] font-bold text-black">
-              7
-            </span>
-          </button>
-
           <div className="mx-1 h-8 w-px bg-white/15" />
 
           <div className="flex items-center gap-3">

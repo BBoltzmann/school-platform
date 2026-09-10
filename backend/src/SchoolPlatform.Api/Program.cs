@@ -1,3 +1,5 @@
+using SchoolPlatform.Application.Dashboard;
+using SchoolPlatform.Infrastructure.Dashboard;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using SchoolPlatform.Api.Services;
@@ -169,6 +171,7 @@ builder.Services.AddScoped<
     SchoolPlatform.Infrastructure.Fees.FeesService>();
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddSingleton<AuthAccountLimiter>();
 builder.Services.AddSingleton<ITemporaryPasswordResetAccess, TemporaryPasswordResetAccess>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
@@ -576,6 +579,7 @@ if (app.Environment.IsDevelopment())
 SchoolPlatform.Api.Endpoints.AcademicManagementEndpoints.MapAcademicManagementEndpoints(app);
 
 SchoolPlatform.Api.Endpoints.StudentEndpoints.MapStudentEndpoints(app);
+SchoolPlatform.Api.Endpoints.DashboardEndpoints.MapDashboardEndpoints(app);
 
 SchoolPlatform.Api.Endpoints.GuardianEndpoints.MapGuardianEndpoints(app);
 
