@@ -114,19 +114,7 @@ export function ChangeStudentPlacementDialog({
         ?.startDate ??
       "";
 
-    const session =
-      setup.currentSession;
-
-    const dateIsValid =
-      session &&
-      date >= session.startDate &&
-      date <= session.endDate;
-
-    setEnrollmentDate(
-      dateIsValid
-        ? date
-        : session?.startDate ?? ""
-    );
+    setEnrollmentDate(date);
 
     setError(null);
   }, [
@@ -324,14 +312,6 @@ export function ChangeStudentPlacementDialog({
 
               <Input
                 type="date"
-                min={
-                  setup.currentSession
-                    .startDate
-                }
-                max={
-                  setup.currentSession
-                    .endDate
-                }
                 value={enrollmentDate}
                 onChange={(event) =>
                   setEnrollmentDate(
@@ -342,8 +322,7 @@ export function ChangeStudentPlacementDialog({
               />
 
               <p className="text-xs text-muted-foreground">
-                Must fall inside the current
-                academic session.
+                Enter the date the student joined the school.
               </p>
             </div>
 

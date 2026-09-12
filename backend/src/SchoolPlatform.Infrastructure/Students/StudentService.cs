@@ -214,11 +214,6 @@ public sealed class StudentService : IStudentService
                 "Academic session was not found.");
         }
 
-        ValidateEnrollmentDate(
-            request.AdmissionDate,
-            session.StartDate,
-            session.EndDate);
-
         var level = await _database.AcademicLevels
             .AsNoTracking()
             .SingleOrDefaultAsync(
@@ -428,11 +423,6 @@ public sealed class StudentService : IStudentService
                 "There is no current academic session.");
         }
 
-        ValidateEnrollmentDate(
-            request.EnrollmentDate,
-            currentSession.StartDate,
-            currentSession.EndDate);
-
         var level = await _database.AcademicLevels
             .AsNoTracking()
             .SingleOrDefaultAsync(
@@ -557,16 +547,4 @@ public sealed class StudentService : IStudentService
         }
     }
 
-    private static void ValidateEnrollmentDate(
-        DateOnly enrollmentDate,
-        DateOnly sessionStartDate,
-        DateOnly sessionEndDate)
-    {
-        if (enrollmentDate < sessionStartDate ||
-            enrollmentDate > sessionEndDate)
-        {
-            throw new InvalidOperationException(
-                $"Enrolment date must fall between {sessionStartDate:yyyy-MM-dd} and {sessionEndDate:yyyy-MM-dd}.");
-        }
-    }
 }
