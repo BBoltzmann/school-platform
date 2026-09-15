@@ -10,6 +10,18 @@ public static class TeacherPortalEndpoints
 {
     public static void MapTeacherPortalEndpoints(WebApplication app)
     {
+        app.MapPost("/api/staff/{staffId:guid}/teacher-invite", async (Guid staffId, ITeacherInvitationService service, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
+        { if (!currentUser.HasPermission("staff.update")) return Results.Forbid(); try { return Results.Ok(await service.GenerateAsync(staffId, cancellationToken)); } catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); } }).RequireAuthorization();
+        app.MapPost("/api/staff/{staffId:guid}/teacher-invite/revoke", async (Guid staffId, ITeacherInvitationService service, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
+        { if (!currentUser.HasPermission("staff.update")) return Results.Forbid(); await service.RevokeAsync(staffId, cancellationToken); return Results.NoContent(); }).RequireAuthorization();
+        app.MapGet("/api/staff/{staffId:guid}/teacher-access-status", async (Guid staffId, ITeacherInvitationService service, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
+        { if (!currentUser.HasPermission("staff.read")) return Results.Forbid(); try { return Results.Ok(await service.GetStatusAsync(staffId, cancellationToken)); } catch (InvalidOperationException ex) { return Results.NotFound(new { error = ex.Message }); } }).RequireAuthorization();
+        app.MapGet("/api/auth/teacher-invite/{token}", async (string token, ITeacherInvitationService service, CancellationToken cancellationToken) =>
+        {
+            var preview = await service.PreviewAsync(token, cancellationToken);
+            return preview is null ? Results.NotFound(new { error = "This invitation is invalid or expired." }) : Results.Ok(preview);
+        });
+        app.MapPost("/api/auth/teacher-invite/activate", async (TeacherInviteActivationRequest request, ITeacherInvitationService service, CancellationToken cancellationToken) => { var slug = await service.ActivateAsync(request, cancellationToken); return slug is null ? Results.BadRequest(new { error = "This invitation is invalid, expired, revoked, already used, or the email is already registered." }) : Results.Ok(new { tenantSlug = slug }); });
         app.MapPost("/api/staff/{staffId:guid}/link-user", async (Guid staffId, LinkTeacherUserRequest request, SchoolPlatformDbContext database, ITenantContext tenantContext, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
         {
             if (!currentUser.HasPermission("staff.update")) return Results.Forbid();

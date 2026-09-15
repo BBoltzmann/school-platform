@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import { CreateStaffDialog } from "@/components/staff/create-staff-dialog";
+import { TeacherInviteActions } from "@/components/staff/teacher-invite-actions";
 import { getStaff } from "@/lib/api/staff";
 
 type StaffPageProps = {
@@ -143,7 +144,7 @@ export default async function StaffPage({
             </h3>
 
             <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-              Add the school's first staff
+            Add the school&apos;s first staff
               member to begin building the
               staff directory.
             </p>
@@ -184,6 +185,7 @@ export default async function StaffPage({
                   <th className="px-5 py-3 font-medium">
                     Status
                   </th>
+                  <th className="px-5 py-3 font-medium">Teacher Portal</th>
                 </tr>
               </thead>
 
@@ -210,7 +212,6 @@ export default async function StaffPage({
                           {member.phone}
                         </div>
                       </td>
-
                       <td className="px-5 py-4 font-mono text-xs">
                         {
                           member.staffNumber
@@ -235,6 +236,7 @@ export default async function StaffPage({
                             : "Non-Teaching"}
                         </span>
                       </td>
+                      <td className="px-5 py-4">{member.isTeachingStaff && <TeacherInviteActions staffId={member.id} />}</td>
 
                       <td className="px-5 py-4">
                         {

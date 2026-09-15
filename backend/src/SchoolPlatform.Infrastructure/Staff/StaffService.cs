@@ -65,7 +65,8 @@ public sealed class StaffService : IStaffService
                 x.EmploymentType,
                 x.IsTeachingStaff,
                 x.Status,
-                x.IsActive))
+                x.IsActive,
+                x.UserId))
             .ToListAsync(cancellationToken);
     }
 
@@ -97,7 +98,8 @@ public sealed class StaffService : IStaffService
                 x.EmploymentType,
                 x.IsTeachingStaff,
                 x.Status,
-                x.IsActive))
+                x.IsActive,
+                x.UserId))
             .SingleOrDefaultAsync(
                 cancellationToken);
     }
@@ -256,7 +258,8 @@ public sealed class StaffService : IStaffService
             staff.EmploymentType,
             staff.IsTeachingStaff,
             staff.Status,
-            staff.IsActive);
+            staff.IsActive,
+            staff.UserId);
     }
 
     private static void ValidateStaff(

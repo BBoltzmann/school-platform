@@ -16,6 +16,7 @@ export type StaffMember = {
   isTeachingStaff: boolean;
   status: string;
   isActive: boolean;
+  userId: string | null;
 };
 
 export type StaffAvailability = {

@@ -70,6 +70,9 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     SchoolPlatform.Application.Teacher.ITeacherPortalService,
     SchoolPlatform.Infrastructure.Teacher.TeacherPortalService>();
+builder.Services.AddScoped<
+    SchoolPlatform.Application.Teacher.ITeacherInvitationService,
+    SchoolPlatform.Infrastructure.Teacher.TeacherInvitationService>();
 
 
 builder.Services.AddScoped<

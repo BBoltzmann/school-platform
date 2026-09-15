@@ -17,4 +17,5 @@ public sealed record StaffMemberResult(
     string EmploymentType,
     bool IsTeachingStaff,
     string Status,
-    bool IsActive);
+    bool IsActive,
+    Guid? UserId);

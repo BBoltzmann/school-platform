@@ -25,6 +25,7 @@ public sealed class SchoolPlatformDbContext : DbContext
         Set<Campus>();
 
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<TeacherPortalInvitation> TeacherPortalInvitations => Set<TeacherPortalInvitation>();
 
     public DbSet<PasswordRecoveryJob> PasswordRecoveryJobs => Set<PasswordRecoveryJob>();
 
