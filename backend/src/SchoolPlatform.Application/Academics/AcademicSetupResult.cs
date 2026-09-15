@@ -41,7 +41,9 @@ public sealed record ClassGroupResult(
     Guid CampusId,
     Guid AcademicLevelId,
     string AcademicLevelName,
-    bool IsActive);
+    bool IsActive,
+    bool UsesCustomSubjectOffering,
+    int OfferedSubjectCount);
 
 public sealed record SubjectResult(
     Guid Id,

@@ -49,6 +49,13 @@ export function TeachingAssignmentsCard({
     useState(
       setup.classes[0]?.id ?? ""
     );
+  const selectedClass = setup.classes.find((item) => item.id === classGroupId);
+  const availableSubjects = useMemo(
+    () => selectedClass?.usesCustomSubjectOffering
+      ? setup.subjects.filter((subject) => selectedClass.offeredSubjectIds.includes(subject.id))
+      : setup.subjects,
+    [selectedClass, setup.subjects]
+  );
 
   const [subjectId, setSubjectId] =
     useState(
@@ -331,9 +338,17 @@ export function TeachingAssignmentsCard({
                       classGroupId
                     }
                     onChange={(event) =>
-                      setClassGroupId(
-                        event.target.value
-                      )
+                      (() => {
+                        const nextClassId = event.target.value;
+                        setClassGroupId(nextClassId);
+                        const nextClass = setup.classes.find((item) => item.id === nextClassId);
+                        const nextSubjects = nextClass?.usesCustomSubjectOffering
+                          ? setup.subjects.filter((subject) => nextClass.offeredSubjectIds.includes(subject.id))
+                          : setup.subjects;
+                        if (!nextSubjects.some((subject) => subject.id === subjectId)) {
+                          setSubjectId(nextSubjects[0]?.id ?? "");
+                        }
+                      })()
                     }
                     className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                     required
@@ -379,13 +394,13 @@ export function TeachingAssignmentsCard({
                     className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                     required
                   >
-                    {setup.subjects.length ===
+                    {availableSubjects.length ===
                     0 ? (
                       <option value="">
                         No subjects available
                       </option>
                     ) : (
-                      setup.subjects.map(
+                      availableSubjects.map(
                         (subject) => (
                           <option
                             key={

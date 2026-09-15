@@ -43,6 +43,12 @@ public sealed class ClassGroup : TenantEntity
 
     public bool IsActive { get; private set; } = true;
 
+    public bool UsesCustomSubjectOffering { get; private set; }
+
+    public ICollection<ClassSubject> ClassSubjects { get; private set; } = new List<ClassSubject>();
+
+    public void SetSubjectOfferingMode(bool useCustom) => UsesCustomSubjectOffering = useCustom;
+
     public Campus Campus { get; private set; } = null!;
 
     public AcademicLevel AcademicLevel { get; private set; } = null!;

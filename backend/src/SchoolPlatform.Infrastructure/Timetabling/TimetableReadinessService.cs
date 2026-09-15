@@ -174,7 +174,9 @@ public sealed class TimetableReadinessService
                 .Where(x =>
                     x.TenantId == tenantId &&
                     x.AcademicSessionId == session.Id &&
-                    x.IsActive)
+                    x.IsActive &&
+                    (!x.ClassGroup.UsesCustomSubjectOffering ||
+                     x.ClassGroup.ClassSubjects.Any(cs => cs.SubjectId == x.SubjectId)))
                 .Select(x => new
                 {
                     x.Id,

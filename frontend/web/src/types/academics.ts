@@ -37,6 +37,8 @@ export type ClassGroup = {
   academicLevelId: string;
   academicLevelName: string;
   isActive: boolean;
+  usesCustomSubjectOffering: boolean;
+  offeredSubjectCount: number;
 };
 
 export type Subject = {

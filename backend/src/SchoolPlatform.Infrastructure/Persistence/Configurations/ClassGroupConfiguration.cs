@@ -17,6 +17,10 @@ public sealed class ClassGroupConfiguration
             .HasMaxLength(100)
             .IsRequired();
 
+        builder.Property(x => x.UsesCustomSubjectOffering)
+            .HasDefaultValue(false)
+            .IsRequired();
+
         builder.HasIndex(x => new
         {
             x.TenantId,

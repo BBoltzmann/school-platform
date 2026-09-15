@@ -89,7 +89,9 @@ public sealed class AcademicSetupService : IAcademicSetupService
                 x.CampusId,
                 x.AcademicLevelId,
                 x.AcademicLevel.Name,
-                x.IsActive))
+                x.IsActive,
+                x.UsesCustomSubjectOffering,
+                x.ClassSubjects.Count))
             .ToListAsync(cancellationToken);
 
         var subjects = await _database.Subjects
@@ -351,7 +353,9 @@ public sealed class AcademicSetupService : IAcademicSetupService
             classGroup.CampusId,
             classGroup.AcademicLevelId,
             level.Name,
-            classGroup.IsActive);
+            classGroup.IsActive,
+            classGroup.UsesCustomSubjectOffering,
+            0);
     }
 
     public async Task<SubjectResult> CreateSubjectAsync(
@@ -735,7 +739,9 @@ public sealed class AcademicSetupService : IAcademicSetupService
                 x.CampusId,
                 x.AcademicLevelId,
                 x.AcademicLevel.Name,
-                x.IsActive))
+                x.IsActive,
+                x.UsesCustomSubjectOffering,
+                x.ClassSubjects.Count))
             .SingleAsync(cancellationToken);
     }
 

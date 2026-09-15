@@ -65,7 +65,9 @@ public sealed class TimetablePlanningService
                     x.Id,
                     x.Name,
                     x.AcademicLevelId,
-                    x.AcademicLevel.Name))
+                    x.AcademicLevel.Name,
+                    x.UsesCustomSubjectOffering,
+                    x.ClassSubjects.Select(cs => cs.SubjectId).ToList()))
                 .ToListAsync(cancellationToken);
 
         var subjects =
@@ -277,7 +279,9 @@ public sealed class TimetablePlanningService
                     x.TenantId == tenantId &&
                     x.AcademicSessionId == session.Id &&
                     x.ClassGroupId == classGroupId &&
-                    x.IsActive)
+                    x.IsActive &&
+                    (!x.ClassGroup.UsesCustomSubjectOffering ||
+                     x.ClassGroup.ClassSubjects.Any(cs => cs.SubjectId == x.SubjectId)))
                 .OrderBy(x =>
                     x.Subject.Name)
                 .Select(x =>
@@ -313,17 +317,15 @@ public sealed class TimetablePlanningService
                 tenantId,
                 cancellationToken);
 
-        var classExists =
+        var classOffering =
             await _database.ClassGroups
                 .AsNoTracking()
-                .AnyAsync(
-                    x =>
-                        x.Id == classGroupId &&
-                        x.TenantId == tenantId &&
-                        x.IsActive,
+                .Where(x => x.Id == classGroupId && x.TenantId == tenantId && x.IsActive)
+                .Select(x => new { x.UsesCustomSubjectOffering, OfferedSubjectIds = x.ClassSubjects.Select(cs => cs.SubjectId).ToList() })
+                .SingleOrDefaultAsync(
                     cancellationToken);
 
-        if (!classExists)
+        if (classOffering is null)
         {
             throw new InvalidOperationException(
                 "Class was not found.");
@@ -347,7 +349,8 @@ public sealed class TimetablePlanningService
                     .Where(x =>
                         x.TenantId == tenantId &&
                         x.IsActive &&
-                        subjectIds.Contains(x.Id))
+                        subjectIds.Contains(x.Id) &&
+                        (!classOffering.UsesCustomSubjectOffering || classOffering.OfferedSubjectIds.Contains(x.Id)))
                     .Select(x => x.Id)
                     .ToListAsync(
                         cancellationToken);

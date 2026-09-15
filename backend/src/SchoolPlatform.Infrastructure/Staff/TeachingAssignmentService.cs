@@ -83,7 +83,9 @@ public sealed class TeachingAssignmentService
                         x.Id,
                         x.Name,
                         x.AcademicLevelId,
-                        x.AcademicLevel.Name))
+                        x.AcademicLevel.Name,
+                        x.UsesCustomSubjectOffering,
+                        x.ClassSubjects.Select(cs => cs.SubjectId).ToList()))
                 .ToListAsync(
                     cancellationToken);
 
@@ -253,6 +255,17 @@ public sealed class TeachingAssignmentService
         {
             throw new InvalidOperationException(
                 "Subject was not found.");
+        }
+
+        if (classGroup.UsesCustomSubjectOffering &&
+            !await _database.ClassSubjects.AnyAsync(
+                x => x.TenantId == tenantId &&
+                     x.ClassGroupId == classGroup.Id &&
+                     x.SubjectId == subject.Id,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"{subject.Name} is not configured as a subject offered by {classGroup.Name}.");
         }
 
         var existing =

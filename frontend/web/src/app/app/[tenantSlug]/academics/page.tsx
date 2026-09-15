@@ -9,6 +9,7 @@ import {
 
 import { CreateClassDialog } from "@/components/academics/create-class-dialog";
 import { ClassActions } from "@/components/academics/class-actions";
+import { ClassSubjectActions } from "@/components/academics/class-subject-actions";
 import { SubjectActions } from "@/components/academics/subject-actions";
 import { CreateLevelDialog } from "@/components/academics/create-level-dialog";
 import { LevelActions } from "@/components/academics/level-actions";
@@ -394,6 +395,7 @@ export default async function AcademicsPage() {
                             campuses={setup.campuses}
                             levels={setup.levels}
                           />
+                          <ClassSubjectActions classGroup={classGroup} subjects={setup.subjects} />
                         </td>
                       </tr>
                     )

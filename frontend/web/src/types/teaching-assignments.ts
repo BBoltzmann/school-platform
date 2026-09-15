@@ -12,6 +12,8 @@ export type TeachingAssignment = {
 
   academicLevelId: string;
   academicLevelName: string;
+  usesCustomSubjectOffering: boolean;
+  offeredSubjectIds: string[];
 
   subjectId: string;
   subjectName: string;
@@ -40,6 +42,8 @@ export type TeachingAssignmentClassOption = {
   name: string;
   academicLevelId: string;
   academicLevelName: string;
+  usesCustomSubjectOffering: boolean;
+  offeredSubjectIds: string[];
 };
 
 export type TeachingAssignmentSubjectOption = {

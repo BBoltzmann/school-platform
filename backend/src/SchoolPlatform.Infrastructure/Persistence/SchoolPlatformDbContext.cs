@@ -64,6 +64,8 @@ public sealed class SchoolPlatformDbContext : DbContext
     public DbSet<Subject> Subjects =>
         Set<Subject>();
 
+    public DbSet<ClassSubject> ClassSubjects => Set<ClassSubject>();
+
     
     public DbSet<Student> Students => Set<Student>();
 

@@ -39,7 +39,9 @@ public sealed record TeachingAssignmentClassOption(
     Guid Id,
     string Name,
     Guid AcademicLevelId,
-    string AcademicLevelName);
+    string AcademicLevelName,
+    bool UsesCustomSubjectOffering,
+    IReadOnlyCollection<Guid> OfferedSubjectIds);
 
 public sealed record TeachingAssignmentSubjectOption(
     Guid Id,
