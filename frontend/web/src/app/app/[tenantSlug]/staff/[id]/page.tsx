@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   BriefcaseBusiness,
   Clock3,
-  GraduationCap,
   Mail,
   MapPin,
   Phone,
@@ -13,6 +12,7 @@ import {
 
 import { EditStaffDialog } from "@/components/staff/edit-staff-dialog";
 import { TeachingAssignmentsCard } from "@/components/staff/teaching-assignments-card";
+import { TeacherInviteActions } from "@/components/staff/teacher-invite-actions";
 
 import {
   getStaffAvailability,
@@ -219,6 +219,10 @@ export default async function StaffProfilePage({
           />
         </div>
       </section>
+
+      {staff.isTeachingStaff && (
+        <TeacherInviteActions staffId={staff.id} />
+      )}
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-xl border bg-card shadow-sm">
