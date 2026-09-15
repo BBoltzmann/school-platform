@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SchoolPlatform.Domain.Staff;
+using SchoolPlatform.Domain.Identity;
 
 namespace SchoolPlatform.Infrastructure.Persistence.Configurations.Staff;
 
@@ -13,6 +14,13 @@ public sealed class StaffMemberConfiguration
         builder.ToTable("staff_members");
 
         builder.HasKey(x => x.Id);
+
+        builder.HasIndex(x => new { x.TenantId, x.UserId }).IsUnique();
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.Property(x => x.StaffNumber)
             .HasMaxLength(50)

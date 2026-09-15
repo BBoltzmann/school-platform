@@ -26,7 +26,7 @@ export function AdminShell({
         role={roles[0] ?? "User"}
       />
 
-      <AdminSidebar tenantSlug={tenantSlug} />
+      <AdminSidebar tenantSlug={tenantSlug} roles={roles} />
 
       <main className="min-h-screen pt-16 lg:pl-64">
         <div className="mx-auto max-w-[1600px] px-5 py-8 sm:px-7 lg:px-10">

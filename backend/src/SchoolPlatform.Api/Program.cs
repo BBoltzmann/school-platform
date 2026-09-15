@@ -67,6 +67,10 @@ builder.Services.AddScoped<
     IClassSubjectService,
     ClassSubjectService>();
 
+builder.Services.AddScoped<
+    SchoolPlatform.Application.Teacher.ITeacherPortalService,
+    SchoolPlatform.Infrastructure.Teacher.TeacherPortalService>();
+
 
 builder.Services.AddScoped<
     SchoolPlatform.Application.Students.IStudentService,
@@ -582,6 +586,7 @@ if (app.Environment.IsDevelopment())
 
 SchoolPlatform.Api.Endpoints.AcademicManagementEndpoints.MapAcademicManagementEndpoints(app);
 SchoolPlatform.Api.Endpoints.ClassSubjectEndpoints.MapClassSubjectEndpoints(app);
+SchoolPlatform.Api.Endpoints.TeacherPortalEndpoints.MapTeacherPortalEndpoints(app);
 
 SchoolPlatform.Api.Endpoints.StudentEndpoints.MapStudentEndpoints(app);
 SchoolPlatform.Api.Endpoints.DashboardEndpoints.MapDashboardEndpoints(app);

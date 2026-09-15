@@ -88,7 +88,7 @@ public sealed class SchoolPlatformDbContext : DbContext
 
 
 
-        public DbSet<StaffMember> StaffMembers
+    public DbSet<StaffMember> StaffMembers
         => Set<StaffMember>();
 
         public DbSet<StaffAvailability> StaffAvailability

@@ -1,4 +1,5 @@
 using SchoolPlatform.Domain.Common;
+using SchoolPlatform.Domain.Academics;
 
 namespace SchoolPlatform.Domain.Timetabling;
 
@@ -47,4 +48,6 @@ public sealed class GeneratedTimetableEntry : TenantEntity
     public TimeOnly EndTime { get; private set; }
 
     public GeneratedTimetable GeneratedTimetable { get; private set; } = null!;
+    public ClassGroup ClassGroup { get; private set; } = null!;
+    public Subject Subject { get; private set; } = null!;
 }

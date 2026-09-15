@@ -103,6 +103,14 @@ public sealed class StaffMember : TenantEntity
 
     public bool IsActive { get; private set; }
 
+    public Guid? UserId { get; private set; }
+
+    public void LinkUser(Guid userId)
+    {
+        if (userId == Guid.Empty) throw new ArgumentException("User ID is required.", nameof(userId));
+        UserId = userId;
+    }
+
 
     public ICollection<StaffAvailability> Availability { get; private set; }
         = new List<StaffAvailability>();

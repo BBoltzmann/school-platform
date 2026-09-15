@@ -4,6 +4,10 @@ import { CreateSessionDialog } from "@/components/academics/create-session-dialo
 import { DashboardError } from "@/components/dashboard/dashboard-error";
 import { getDashboard } from "@/lib/api/dashboard";
 import type { DashboardResponse } from "@/types/dashboard";
+import { getSessionContext } from "@/lib/auth/session";
+import { authenticatedBackendFetch } from "@/lib/api/authenticated-backend";
+import { TeacherPortalView } from "@/components/teacher/teacher-portal-view";
+import type { TeacherPortal } from "@/types/teacher";
 
 type Props = { params: Promise<{ tenantSlug: string }> };
 const actionCopy: Record<string, { title: string; description: string; href?: string; icon: typeof Users }> = {
@@ -42,6 +46,11 @@ function Events({ data }: { data: DashboardResponse }) {
 
 export default async function DashboardPage({ params }: Props) {
   const { tenantSlug } = await params;
+  const session = await getSessionContext();
+  if (session?.roles.includes("Teacher")) {
+    const teacherResponse = await authenticatedBackendFetch("/api/me/teacher-portal");
+    if (teacherResponse?.ok) return <TeacherPortalView data={await teacherResponse.json() as TeacherPortal} />;
+  }
   let data: DashboardResponse;
   try { data = await getDashboard(); } catch { return <DashboardError />; }
   const { metrics, academic } = data;
