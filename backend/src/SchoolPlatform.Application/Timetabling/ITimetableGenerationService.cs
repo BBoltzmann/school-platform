@@ -9,4 +9,8 @@ public interface ITimetableGenerationService
     Task<GeneratedTimetableResult?> GetAsync(
         Guid academicTermId,
         CancellationToken cancellationToken = default);
+
+    Task ResetAsync(
+        Guid academicTermId,
+        CancellationToken cancellationToken = default);
 }

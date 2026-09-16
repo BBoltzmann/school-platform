@@ -63,6 +63,7 @@ export function TimetableMvpPanel({
     generating,
     setGenerating,
   ] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const [
     generationError,
@@ -282,6 +283,20 @@ export function TimetableMvpPanel({
     }
   }
 
+  async function resetGenerated() {
+    if (!selectedTermId || !window.confirm("Reset Generated Timetable?\n\nThis removes the generated lesson schedule for the selected term. It does not remove classes, subjects, teacher assignments, availability, or timetable structure. You can regenerate afterward.")) return;
+    setResetting(true);
+    setGenerationError(null);
+    try {
+      const response = await fetch(`/api/timetable/generated/${selectedTermId}/reset`, { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "Unable to reset generated timetable.");
+      setTimetable(null);
+    } catch (exception) {
+      setGenerationError(exception instanceof Error ? exception.message : "Unable to reset generated timetable.");
+    } finally { setResetting(false); }
+  }
+
   return (
     <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
       <div className="border-b px-5 py-4">
@@ -452,6 +467,7 @@ export function TimetableMvpPanel({
               ? "Regenerate Timetable"
               : "Generate Timetable"}
           </Button>
+          {timetable && <Button type="button" variant="outline" onClick={() => void resetGenerated()} disabled={resetting || generating}>{resetting ? "Resetting…" : "Reset Generated Timetable"}</Button>}
         </div>
 
         {generationError && (

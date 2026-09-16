@@ -602,6 +602,45 @@ public sealed class TimetableGenerationService
             entries);
     }
 
+    public async Task ResetAsync(Guid academicTermId, CancellationToken cancellationToken = default)
+    {
+        if (academicTermId == Guid.Empty)
+            throw new InvalidOperationException("Academic term is required.");
+
+        var tenantId = _tenantContext.TenantId;
+        var sessionId = await _database.AcademicSessions.AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.IsCurrent && x.IsActive)
+            .Select(x => x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (sessionId == Guid.Empty)
+            throw new InvalidOperationException("A current academic session is required.");
+
+        var validTerm = await _database.AcademicTerms.AsNoTracking().AnyAsync(x =>
+            x.Id == academicTermId && x.TenantId == tenantId && x.AcademicSessionId == sessionId && x.IsActive,
+            cancellationToken);
+        if (!validTerm)
+            throw new InvalidOperationException("The selected academic term was not found in the current academic session.");
+
+        await using var transaction = await _database.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var timetable = await _database.GeneratedTimetables.SingleOrDefaultAsync(x =>
+                x.TenantId == tenantId && x.AcademicSessionId == sessionId && x.AcademicTermId == academicTermId,
+                cancellationToken);
+            if (timetable is not null)
+            {
+                _database.GeneratedTimetables.Remove(timetable);
+                await _database.SaveChangesAsync(cancellationToken);
+            }
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     private static List<TeachingSlot> BuildSlots(
         TimetableSettings settings)
     {
