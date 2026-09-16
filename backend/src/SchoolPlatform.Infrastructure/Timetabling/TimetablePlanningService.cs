@@ -210,8 +210,7 @@ public sealed class TimetablePlanningService
                             requestedBlock.EndTime,
                             requestedBlock.SortOrder);
 
-                    day.NonTeachingBlocks.Add(
-                        block);
+                    _database.TimetableNonTeachingBlocks.Add(block);
                 }
             }
 

@@ -1,5 +1,6 @@
 using SchoolPlatform.Application.Common.Security;
 using SchoolPlatform.Application.Timetabling;
+using Microsoft.Extensions.Logging;
 
 namespace SchoolPlatform.Api.Endpoints;
 
@@ -13,6 +14,8 @@ public static class TimetablePlanningEndpoints
             async (
                 ITimetablePlanningService timetable,
                 ICurrentUserContext currentUser,
+                ITenantContext tenantContext,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 if (!currentUser.HasPermission(
@@ -35,6 +38,8 @@ public static class TimetablePlanningEndpoints
                 SaveTimetableSettingsRequest request,
                 ITimetablePlanningService timetable,
                 ICurrentUserContext currentUser,
+                ITenantContext tenantContext,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 if (!currentUser.HasPermission(
@@ -58,6 +63,11 @@ public static class TimetablePlanningEndpoints
                     {
                         error = exception.Message
                     });
+                }
+                catch (Exception exception)
+                {
+                    loggerFactory.CreateLogger("TimetablePlanning").LogError(exception, "Timetable settings save failed for tenant {TenantId}", tenantContext.TenantId);
+                    return Results.Problem("Unable to save timetable settings.", statusCode: 500);
                 }
             })
             .RequireAuthorization();

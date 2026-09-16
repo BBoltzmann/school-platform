@@ -308,8 +308,17 @@ public sealed class TimetableGenerationService
 
                 if (best is null)
                 {
+                    var availableByTeacher = matchingAssignments
+                        .Select(assignment => new
+                        {
+                            assignment.StaffName,
+                            Count = slots.Count(slot => TeacherCanUseSlot(assignment, slot, availability))
+                        })
+                        .OrderByDescending(x => x.Count)
+                        .ToList();
+                    var bestAvailability = availableByTeacher.FirstOrDefault();
                     throw new InvalidOperationException(
-                        $"Unable to place all {requirement.PeriodsPerWeek} weekly periods for {requirement.ClassGroupName} — {requirement.SubjectName}. Review teacher availability or timetable capacity.");
+                        $"Unable to place all {requirement.PeriodsPerWeek} weekly periods for {requirement.ClassGroupName} — {requirement.SubjectName}. Placed {lessonIndex} of {requirement.PeriodsPerWeek}; assigned teacher {bestAvailability?.StaffName ?? "unknown"} has {bestAvailability?.Count ?? 0} compatible timetable slots. Review teacher availability or timetable capacity.");
                 }
 
                 var selectedAssignment =
