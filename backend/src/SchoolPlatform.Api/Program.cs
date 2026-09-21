@@ -66,6 +66,7 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IClassSubjectService,
     ClassSubjectService>();
+builder.Services.AddScoped<IParallelSubjectGroupService, ParallelSubjectGroupService>();
 
 builder.Services.AddScoped<
     SchoolPlatform.Application.Teacher.ITeacherPortalService,
@@ -589,6 +590,7 @@ if (app.Environment.IsDevelopment())
 
 SchoolPlatform.Api.Endpoints.AcademicManagementEndpoints.MapAcademicManagementEndpoints(app);
 SchoolPlatform.Api.Endpoints.ClassSubjectEndpoints.MapClassSubjectEndpoints(app);
+SchoolPlatform.Api.Endpoints.ParallelSubjectGroupEndpoints.MapParallelSubjectGroupEndpoints(app);
 SchoolPlatform.Api.Endpoints.TeacherPortalEndpoints.MapTeacherPortalEndpoints(app);
 
 SchoolPlatform.Api.Endpoints.StudentEndpoints.MapStudentEndpoints(app);
