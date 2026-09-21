@@ -43,7 +43,7 @@ public sealed class TeacherPortalService(SchoolPlatformDbContext database, ITena
                     join subject in database.Subjects.AsNoTracking() on entry.SubjectId equals subject.Id
                     where entry.TenantId == tenantId && timetable.AcademicSessionId == sessionId && (termId == null || timetable.AcademicTermId == termId) && (staffId == null || entry.StaffMemberId == staffId) && (classGroupId == null || entry.ClassGroupId == classGroupId)
                     orderby entry.DayOfWeek, entry.PeriodNumber
-                    select new TeacherTimetableEntryResult(entry.ClassGroupId, classGroup.Name, entry.SubjectId, subject.Name, entry.DayOfWeek, entry.PeriodNumber, entry.StartTime, entry.EndTime);
+                    select new TeacherTimetableEntryResult(entry.ClassGroupId, classGroup.Name, entry.SubjectId, subject.Name, entry.DayOfWeek, entry.PeriodNumber, entry.StartTime, entry.EndTime, entry.ParallelOccurrenceId);
         return await query.ToListAsync(cancellationToken);
     }
 }

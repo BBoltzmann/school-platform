@@ -18,7 +18,9 @@ public sealed class GeneratedTimetableEntry : TenantEntity
         DayOfWeek dayOfWeek,
         int periodNumber,
         TimeOnly startTime,
-        TimeOnly endTime)
+        TimeOnly endTime,
+        Guid? parallelSubjectGroupId = null,
+        Guid? parallelOccurrenceId = null)
     {
         TenantId = tenantId;
         GeneratedTimetableId = generatedTimetableId;
@@ -29,6 +31,8 @@ public sealed class GeneratedTimetableEntry : TenantEntity
         PeriodNumber = periodNumber;
         StartTime = startTime;
         EndTime = endTime;
+        ParallelSubjectGroupId = parallelSubjectGroupId;
+        ParallelOccurrenceId = parallelOccurrenceId;
     }
 
     public Guid GeneratedTimetableId { get; private set; }
@@ -47,7 +51,11 @@ public sealed class GeneratedTimetableEntry : TenantEntity
 
     public TimeOnly EndTime { get; private set; }
 
+    public Guid? ParallelSubjectGroupId { get; private set; }
+    public Guid? ParallelOccurrenceId { get; private set; }
+
     public GeneratedTimetable GeneratedTimetable { get; private set; } = null!;
     public ClassGroup ClassGroup { get; private set; } = null!;
     public Subject Subject { get; private set; } = null!;
+    public ParallelSubjectGroup? ParallelSubjectGroup { get; private set; }
 }

@@ -773,7 +773,7 @@ function GeneratedTimetableViewer({
                   </div>
                 ) : (
                   <div className="divide-y">
-                    {entries.map(
+                    {groupEntries(entries).map(
                       (entry) => (
                         <div
                           key={
@@ -802,10 +802,10 @@ function GeneratedTimetableViewer({
 
                           <div>
                             <div className="text-sm font-medium">
-                              {
-                                entry.subjectName
-                              }
+                              {entry.parallelDisplayName || entry.subjectName}
                             </div>
+
+                            {entry.parallelMembers?.map(member => <div key={`${entry.id}-${member.subjectName}`} className="text-xs text-muted-foreground">{member.subjectName} — {member.staffName}</div>)}
 
                             <div className="mt-1 text-xs text-muted-foreground">
                               {viewMode ===
@@ -861,6 +861,20 @@ function groupByDay(
       (item) =>
         item.entries.length > 0
     );
+}
+
+function groupEntries(entries: GeneratedTimetableEntry[]) {
+  const result: GeneratedTimetableEntry[] = [];
+  const byOccurrence = new Map<string, GeneratedTimetableEntry>();
+  for (const entry of entries) {
+    if (!entry.parallelOccurrenceId) { result.push(entry); continue; }
+    const existing = byOccurrence.get(entry.parallelOccurrenceId);
+    if (existing) { existing.parallelMembers = [...(existing.parallelMembers ?? []), { subjectName: entry.subjectName, staffName: entry.staffName }]; continue; }
+    const grouped = { ...entry, parallelMembers: [{ subjectName: entry.subjectName, staffName: entry.staffName }] };
+    byOccurrence.set(entry.parallelOccurrenceId, grouped);
+    result.push(grouped);
+  }
+  return result;
 }
 
 function dayName(

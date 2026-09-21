@@ -13,7 +13,7 @@ public sealed record TeacherAcademicContext(string? SessionName, string? TermNam
 public sealed record TeacherClassResult(Guid Id, string Name, string LevelName, int StudentCount, IReadOnlyCollection<string> Subjects);
 public sealed record TeacherSubjectResult(Guid SubjectId, string SubjectName, string SubjectCode, Guid ClassGroupId, string ClassName, string LevelName, int StudentCount);
 public sealed record TeacherStudentResult(Guid Id, string AdmissionNumber, string Name, Guid ClassGroupId, string ClassName);
-public sealed record TeacherTimetableEntryResult(Guid ClassGroupId, string ClassName, Guid SubjectId, string SubjectName, DayOfWeek DayOfWeek, int PeriodNumber, TimeOnly StartTime, TimeOnly EndTime);
+public sealed record TeacherTimetableEntryResult(Guid ClassGroupId, string ClassName, Guid SubjectId, string SubjectName, DayOfWeek DayOfWeek, int PeriodNumber, TimeOnly StartTime, TimeOnly EndTime, Guid? ParallelOccurrenceId = null);
 public sealed record LinkTeacherUserRequest(Guid UserId);
 
 public interface ITeacherPortalService

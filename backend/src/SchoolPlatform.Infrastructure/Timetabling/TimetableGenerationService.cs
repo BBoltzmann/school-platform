@@ -176,6 +176,13 @@ public sealed class TimetableGenerationService
                 .ToListAsync(
                     cancellationToken);
 
+        var configuredGroups = await _database.ParallelSubjectGroups
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.IsActive)
+            .Select(x => new { x.Id, x.ClassGroupId, x.DisplayName, Members = x.Members.Select(m => m.ClassSubject.SubjectId).ToList() })
+            .ToListAsync(cancellationToken);
+        var groupedSubjects = configuredGroups.SelectMany(x => x.Members.Select(subjectId => (x.ClassGroupId, subjectId))).ToHashSet();
+
         var orderedRequirements =
             requirements
                 .OrderBy(x =>
@@ -207,9 +214,42 @@ public sealed class TimetableGenerationService
         var planned =
             new List<PlannedEntry>();
 
+        foreach (var group in configuredGroups)
+        {
+            var members = group.Members.Select(subjectId => new
+            {
+                Requirement = requirements.SingleOrDefault(x => x.ClassGroupId == group.ClassGroupId && x.SubjectId == subjectId),
+                Assignment = assignments.FirstOrDefault(x => x.ClassGroupId == group.ClassGroupId && x.SubjectId == subjectId)
+            }).ToList();
+            if (members.Any(x => x.Requirement is null || x.Assignment is null))
+                throw new InvalidOperationException($"{group.DisplayName ?? "Parallel subject group"} has a missing weekly requirement or teacher assignment.");
+            var requiredPeriods = members[0].Requirement!.PeriodsPerWeek;
+            if (members.Any(x => x.Requirement!.PeriodsPerWeek != requiredPeriods))
+                throw new InvalidOperationException("Subjects in a parallel group must have matching weekly period requirements.");
+            for (var lessonIndex = 0; lessonIndex < requiredPeriods; lessonIndex++)
+            {
+                TeachingSlot? selectedSlot = null;
+                foreach (var slot in slots)
+                {
+                    if (classBusy.Contains(BusyKey(group.ClassGroupId, slot)) || members.Any(x => !TeacherCanUseSlot(x.Assignment!, slot, availability) || teacherBusy.Contains(BusyKey(x.Assignment!.StaffMemberId, slot)))) continue;
+                    selectedSlot = slot;
+                    break;
+                }
+                if (selectedSlot is null) throw new InvalidOperationException($"Unable to place all {requiredPeriods} shared periods for {group.DisplayName ?? "parallel subject group"}; placed {lessonIndex}. All member teachers must be available simultaneously.");
+                var occurrenceId = Guid.NewGuid();
+                classBusy.Add(BusyKey(group.ClassGroupId, selectedSlot));
+                foreach (var member in members)
+                {
+                    teacherBusy.Add(BusyKey(member.Assignment!.StaffMemberId, selectedSlot));
+                    teacherLoad[member.Assignment.StaffMemberId] = teacherLoad.GetValueOrDefault(member.Assignment.StaffMemberId) + 1;
+                    planned.Add(new PlannedEntry(member.Requirement!, member.Assignment!, selectedSlot, group.Id, occurrenceId));
+                }
+            }
+        }
+
         foreach (
             var requirement
-            in orderedRequirements)
+            in orderedRequirements.Where(x => !groupedSubjects.Contains((x.ClassGroupId, x.SubjectId))))
         {
             var matchingAssignments =
                 assignments
@@ -421,7 +461,9 @@ public sealed class TimetableGenerationService
                         item.Slot.DayOfWeek,
                         item.Slot.PeriodNumber,
                         item.Slot.StartTime,
-                        item.Slot.EndTime));
+                        item.Slot.EndTime,
+                        item.ParallelSubjectGroupId,
+                        item.ParallelOccurrenceId));
             }
 
             await _database.SaveChangesAsync(
@@ -497,6 +539,9 @@ public sealed class TimetableGenerationService
                     x.StaffMemberId)
                 .Distinct()
                 .ToList();
+
+        var parallelGroupIds = rawEntries.Where(x => x.ParallelSubjectGroupId.HasValue).Select(x => x.ParallelSubjectGroupId!.Value).Distinct().ToArray();
+        var parallelNames = await _database.ParallelSubjectGroups.AsNoTracking().Where(x => x.TenantId == tenantId && parallelGroupIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.DisplayName, cancellationToken);
 
         var classes =
             await _database.ClassGroups
@@ -598,7 +643,10 @@ public sealed class TimetableGenerationService
                         x.DayOfWeek,
                         x.PeriodNumber,
                         x.StartTime,
-                        x.EndTime);
+                        x.EndTime,
+                        x.ParallelSubjectGroupId,
+                        x.ParallelOccurrenceId,
+                        x.ParallelSubjectGroupId.HasValue && parallelNames.TryGetValue(x.ParallelSubjectGroupId.Value, out var parallelName) ? parallelName : null);
                 })
                 .ToList();
 
@@ -850,5 +898,7 @@ public sealed class TimetableGenerationService
     private sealed record PlannedEntry(
         RequirementRecord Requirement,
         AssignmentRecord Assignment,
-        TeachingSlot Slot);
+        TeachingSlot Slot,
+        Guid? ParallelSubjectGroupId = null,
+        Guid? ParallelOccurrenceId = null);
 }

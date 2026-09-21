@@ -23,4 +23,7 @@ public sealed record GeneratedTimetableEntryResult(
     DayOfWeek DayOfWeek,
     int PeriodNumber,
     TimeOnly StartTime,
-    TimeOnly EndTime);
+    TimeOnly EndTime,
+    Guid? ParallelSubjectGroupId = null,
+    Guid? ParallelOccurrenceId = null,
+    string? ParallelDisplayName = null);

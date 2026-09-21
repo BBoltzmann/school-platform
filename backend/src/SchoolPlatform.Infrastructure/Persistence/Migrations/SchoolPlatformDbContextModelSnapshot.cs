@@ -2206,6 +2206,12 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.Property<int>("PeriodNumber")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("ParallelOccurrenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ParallelSubjectGroupId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("StaffMemberId")
                         .HasColumnType("uuid");
 
@@ -2230,6 +2236,11 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.HasIndex("SubjectId");
 
                     b.HasIndex("TenantId", "GeneratedTimetableId", "ClassGroupId", "DayOfWeek", "PeriodNumber")
+                        .HasFilter("\"ParallelOccurrenceId\" IS NULL")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "GeneratedTimetableId", "ClassGroupId", "DayOfWeek", "PeriodNumber", "ParallelOccurrenceId")
+                        .HasFilter("\"ParallelOccurrenceId\" IS NOT NULL")
                         .IsUnique();
 
                     b.HasIndex("TenantId", "GeneratedTimetableId", "StaffMemberId", "DayOfWeek", "PeriodNumber")
@@ -2424,9 +2435,16 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", "ParallelSubjectGroup")
+                        .WithMany()
+                        .HasForeignKey("ParallelSubjectGroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("ClassGroup");
 
                     b.Navigation("Subject");
+
+                    b.Navigation("ParallelSubjectGroup");
                 });
 
             modelBuilder.Entity("SchoolPlatform.Domain.Admissions.AdmissionApplication", b =>

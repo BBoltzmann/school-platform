@@ -31,15 +31,12 @@ public sealed class GeneratedTimetableEntryConfiguration
             .HasColumnType("time")
             .IsRequired();
 
-        builder.HasIndex(x => new
-        {
-            x.TenantId,
-            x.GeneratedTimetableId,
-            x.ClassGroupId,
-            x.DayOfWeek,
-            x.PeriodNumber
-        })
-        .IsUnique();
+        builder.HasIndex(x => new { x.TenantId, x.GeneratedTimetableId, x.ClassGroupId, x.DayOfWeek, x.PeriodNumber })
+            .HasFilter("\"ParallelOccurrenceId\" IS NULL")
+            .IsUnique();
+        builder.HasIndex(x => new { x.TenantId, x.GeneratedTimetableId, x.ClassGroupId, x.DayOfWeek, x.PeriodNumber, x.ParallelOccurrenceId })
+            .HasFilter("\"ParallelOccurrenceId\" IS NOT NULL")
+            .IsUnique();
 
         builder.HasIndex(x => new
         {
@@ -59,5 +56,7 @@ public sealed class GeneratedTimetableEntryConfiguration
                 x.GeneratedTimetableId)
             .OnDelete(
                 DeleteBehavior.Cascade);
+
+        builder.HasOne(x => x.ParallelSubjectGroup).WithMany().HasForeignKey(x => x.ParallelSubjectGroupId).OnDelete(DeleteBehavior.Restrict);
     }
 }
