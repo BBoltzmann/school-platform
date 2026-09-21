@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { downloadTimetablePdf, printTimetable } from "@/lib/timetable-pdf";
 
 import type {
   GeneratedTimetable,
@@ -29,16 +30,19 @@ import type {
 
 type ViewMode =
   | "class"
-  | "teacher";
+  | "teacher"
+  | "master";
 
 export function TimetableMvpPanel({
   readiness,
   terms,
   settings,
+  schoolName,
 }: {
   readiness: TimetableReadiness;
   terms: TimetableTermOption[];
   settings: TimetableSettings | null;
+  schoolName: string;
 }) {
   const [
     selectedTermId,
@@ -85,6 +89,7 @@ export function TimetableMvpPanel({
     selectedTeacherId,
     setSelectedTeacherId,
   ] = useState("");
+  const selectedTermName = terms.find(term => term.id === selectedTermId)?.name ?? "";
 
   useEffect(() => {
     if (!selectedTermId) {
@@ -521,6 +526,9 @@ export function TimetableMvpPanel({
             setSelectedTeacherId={
               setSelectedTeacherId
             }
+            sessionName={readiness.academicSessionName}
+            termName={selectedTermName}
+            schoolName={schoolName}
           />
         ) : (
           <div className="border-t py-12 text-center">
@@ -584,6 +592,9 @@ function GeneratedTimetableViewer({
   setSelectedClassId,
   selectedTeacherId,
   setSelectedTeacherId,
+  sessionName,
+  termName,
+  schoolName,
 }: {
   timetable: GeneratedTimetable;
   settings: TimetableSettings | null;
@@ -607,11 +618,16 @@ function GeneratedTimetableViewer({
   setSelectedTeacherId: (
     value: string
   ) => void;
+  sessionName: string;
+  termName: string;
+  schoolName: string;
 }) {
   const visibleEntries =
     timetable.entries.filter(
       (entry) =>
-        viewMode === "class"
+        viewMode === "master"
+          ? true
+          : viewMode === "class"
           ? entry.classGroupId ===
             selectedClassId
           : entry.staffMemberId ===
@@ -643,6 +659,7 @@ function GeneratedTimetableViewer({
         </div>
 
         <div className="inline-flex rounded-lg border p-1">
+          <button type="button" onClick={() => setViewMode("master")} className={viewMode === "master" ? "rounded-md bg-muted px-3 py-2 text-sm font-medium" : "rounded-md px-3 py-2 text-sm text-muted-foreground"}>Master</button>
           <button
             type="button"
             onClick={() =>
@@ -677,7 +694,14 @@ function GeneratedTimetableViewer({
         </div>
       </div>
 
-      {viewMode === "class" ? (
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" onClick={() => exportTimetable("master", timetable, settings, sessionName, termName, undefined, undefined, schoolName)}>Download Master PDF</Button>
+        <Button type="button" variant="outline" onClick={() => printTimetable("Master School Timetable", timetableLines(timetable, settings, sessionName, termName, "master", undefined, undefined, schoolName))}>Print Master Timetable</Button>
+        {viewMode === "class" && selectedClassId && <><Button type="button" variant="outline" onClick={() => exportTimetable("class", timetable, settings, sessionName, termName, selectedClassId, undefined, schoolName)}>Download Class PDF</Button><Button type="button" variant="outline" onClick={() => printTimetable("Class Timetable", timetableLines(timetable, settings, sessionName, termName, "class", selectedClassId, schoolName))}>Print Class</Button></>}
+        {viewMode === "teacher" && selectedTeacherId && <><Button type="button" variant="outline" onClick={() => exportTimetable("teacher", timetable, settings, sessionName, termName, undefined, selectedTeacherId, schoolName)}>Download Teacher PDF</Button><Button type="button" variant="outline" onClick={() => printTimetable("Teacher Timetable", timetableLines(timetable, settings, sessionName, termName, "teacher", undefined, selectedTeacherId, schoolName))}>Print Teacher</Button></>}
+      </div>
+
+      {viewMode === "master" ? <MasterTimetable timetable={timetable} settings={settings} /> : viewMode === "class" ? (
         <div className="space-y-2">
           <label className="text-sm font-medium">
             Class
@@ -845,6 +869,45 @@ function GeneratedTimetableViewer({
       </div>
     </div>
   );
+}
+
+function MasterTimetable({ timetable, settings }: { timetable: GeneratedTimetable; settings: TimetableSettings | null }) {
+  const classes = Array.from(new Map(timetable.entries.map(entry => [entry.classGroupId, `${entry.academicLevelName} — ${entry.classGroupName}`])).entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  return <div className="space-y-4">{["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map(day => {
+    const columns = periodColumns(settings, day);
+    const entries = timetable.entries.filter(entry => dayName(entry.dayOfWeek) === day);
+    if (entries.length === 0 && columns.length === 0) return null;
+    return <section key={day} className="overflow-x-auto rounded-lg border"><h4 className="border-b bg-muted/40 px-4 py-3 font-semibold">{day}</h4><table className="w-full min-w-[900px] table-fixed text-left text-xs"><thead><tr className="border-b"><th className="w-40 px-2 py-2">Class</th>{columns.map(column => <th key={column.period} className="px-2 py-2">{column.label}</th>)}</tr></thead><tbody>{classes.map(([classId, className]) => <tr key={classId} className="border-b last:border-0"><td className="px-2 py-3 font-medium">{className}</td>{columns.map(column => { const block = getBlocksForDay(settings, day).find(item => item.startTime.slice(0, 5) <= column.start && item.endTime.slice(0, 5) > column.start); const entry = groupEntries(entries.filter(item => item.classGroupId === classId && item.periodNumber === column.period))[0]; return <td key={column.period} className={`border-l px-2 py-3 align-top ${block ? "bg-amber-50 font-medium text-amber-800" : ""}`}>{block ? block.name : entry ? <><div className="font-semibold">{entry.parallelDisplayName || entry.subjectName}</div>{entry.parallelMembers && <div className="mt-1 text-[10px] text-muted-foreground">{entry.parallelMembers.map(member => `${member.subjectName} — ${member.staffName}`).join("; ")}</div>}</> : "—"}</td>; })}</tr>)}</tbody></table></section>;
+  })}</div>;
+}
+
+function periodColumns(settings: TimetableSettings | null, day: string) {
+  const configured = settings?.days.find(item => dayName(item.dayOfWeek) === day);
+  const duration = settings?.periodDurationMinutes ?? 0;
+  if (!configured || duration <= 0) return [];
+  const start = configured.startTime.slice(0, 5).split(":").map(Number);
+  const end = configured.endTime.slice(0, 5).split(":").map(Number);
+  const startMinutes = start[0] * 60 + start[1];
+  const endMinutes = end[0] * 60 + end[1];
+  return Array.from({ length: Math.max(0, Math.floor((endMinutes - startMinutes) / duration)) }, (_, index) => {
+    const from = startMinutes + index * duration;
+    const to = from + duration;
+    const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+    return { period: index + 1, start: clock(from), label: `${clock(from)}–${clock(to)}` };
+  });
+}
+
+function timetableLines(timetable: GeneratedTimetable, settings: TimetableSettings | null, sessionName: string, termName: string, mode: "master" | "class" | "teacher", classId?: string, teacherId?: string, schoolName = "School timetable") {
+  const entries = timetable.entries.filter(entry => mode === "master" || (mode === "class" ? entry.classGroupId === classId : entry.staffMemberId === teacherId));
+  const lines = [`School: ${schoolName}`, `Session: ${sessionName}`, `Term: ${termName}`, `Active version: ${timetable.versionNumber}`, `Updated: ${formatGeneratedDate(timetable.generatedAtUtc)}`, ""];
+  for (const { day, entries: dayEntries } of groupByDay(entries)) { lines.push(day); groupEntries(dayEntries).forEach(entry => lines.push(`${entry.academicLevelName} ${entry.classGroupName} | ${formatTime(entry.startTime)}-${formatTime(entry.endTime)} | ${entry.parallelDisplayName || entry.subjectName} | ${entry.parallelMembers?.map(member => `${member.subjectName} — ${member.staffName}`).join("; ") || entry.staffName}`)); getBlocksForDay(settings, day).forEach(block => lines.push(`[${block.name}] ${formatTime(block.startTime)}-${formatTime(block.endTime)}`)); lines.push(""); }
+  if (mode === "master") lines.push("Prepared By: ____________________", "Principal: ______________________", "Approved / Verified: ____________", "Date: ___________________________");
+  return lines;
+}
+
+function exportTimetable(mode: "master" | "class" | "teacher", timetable: GeneratedTimetable, settings: TimetableSettings | null, sessionName: string, termName: string, classId?: string, teacherId?: string, schoolName = "School timetable") {
+  const title = mode === "master" ? "Master School Timetable" : mode === "class" ? "Class Timetable" : "Teacher Timetable";
+  downloadTimetablePdf(`${mode}-timetable-v${timetable.versionNumber}.pdf`, title, timetableLines(timetable, settings, sessionName, termName, mode, classId, teacherId, schoolName), mode === "master" ? "a3-landscape" : "a4-landscape", schoolName);
 }
 
 function groupByDay(

@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using SchoolPlatform.Application.Timetabling;
+using SchoolPlatform.Domain.Academics;
+using SchoolPlatform.Domain.Tenancy;
 using SchoolPlatform.Domain.Timetabling;
 
 namespace SchoolPlatform.IntegrationTests;
@@ -61,6 +63,73 @@ public sealed class PostgresTimetableTests
 
     [PostgresTimetableFact] public Task TwoMemberParallelGeneration() => AssertParallel(2);
     [PostgresTimetableFact] public Task ThreeMemberParallelGeneration() => AssertParallel(3);
+
+    [PostgresTimetableFact]
+    public async Task ActiveTimetableReadIsTenantScoped()
+    {
+        await using var fixture = new PostgresTimetableFixture();
+        await fixture.InitializeAsync();
+        await using var db = fixture.Open();
+        var foreignTenant = new Tenant("Other fixture", "other-fixture");
+        var foreignSession = new AcademicSession(foreignTenant.Id, "Other session", new(2026, 9, 1), new(2027, 7, 1), true);
+        var foreignTerm = new AcademicTerm(foreignTenant.Id, foreignSession.Id, "Other term", new(2026, 9, 1), new(2026, 12, 20), 1);
+        db.AddRange(foreignTenant, foreignSession, foreignTerm);
+        await db.SaveChangesAsync();
+        var foreignTimetable = new GeneratedTimetable(foreignTenant.Id, foreignSession.Id, foreignTerm.Id);
+        db.Add(foreignTimetable);
+        await db.SaveChangesAsync();
+        var result = await fixture.Service(db).GetAsync(foreignTerm.Id);
+        Assert.Null(result);
+    }
+
+    [PostgresTimetableFact]
+    public async Task DoublePeriodPreferenceGroupsThreePeriods()
+    {
+        await using var fixture = new PostgresTimetableFixture();
+        await fixture.InitializeAsync(subjectPeriods: 3);
+        var result = await fixture.GenerateAsync();
+        var entries = result.Entries.Where(x => x.ClassGroupId == fixture.ClassId && x.SubjectId == fixture.SubjectIds[0]).OrderBy(x => x.DayOfWeek).ThenBy(x => x.PeriodNumber).ToList();
+        Assert.Equal(3, entries.Count);
+        Assert.Contains(entries.Zip(entries.Skip(1)), pair => pair.First.DayOfWeek == pair.Second.DayOfWeek && pair.First.EndTime == pair.Second.StartTime);
+    }
+
+    [PostgresTimetableFact]
+    public async Task DoublePeriodPreferenceGroupsFourPeriods()
+    {
+        await using var fixture = new PostgresTimetableFixture();
+        await fixture.InitializeAsync(subjectPeriods: 4);
+        var result = await fixture.GenerateAsync();
+        var entries = result.Entries.Where(x => x.ClassGroupId == fixture.ClassId && x.SubjectId == fixture.SubjectIds[0]).OrderBy(x => x.DayOfWeek).ThenBy(x => x.PeriodNumber).ToList();
+        Assert.Equal(4, entries.Count);
+        Assert.Equal(2, entries.Zip(entries.Skip(1)).Count(pair => pair.First.DayOfWeek == pair.Second.DayOfWeek && pair.First.EndTime == pair.Second.StartTime));
+    }
+
+    [PostgresTimetableFact]
+    public async Task DoublePeriodPreferenceGroupsFiveAndSixPeriods()
+    {
+        foreach (var periods in new[] { 5, 6 })
+        {
+            await using var fixture = new PostgresTimetableFixture();
+            await fixture.InitializeAsync(subjectPeriods: periods);
+            var result = await fixture.GenerateAsync();
+            var entries = result.Entries.Where(x => x.ClassGroupId == fixture.ClassId && x.SubjectId == fixture.SubjectIds[0]).OrderBy(x => x.DayOfWeek).ThenBy(x => x.PeriodNumber).ToList();
+            Assert.Equal(periods, entries.Count);
+            Assert.True(entries.Zip(entries.Skip(1)).Count(pair => pair.First.DayOfWeek == pair.Second.DayOfWeek && pair.First.EndTime == pair.Second.StartTime) >= periods / 2);
+        }
+    }
+
+    [PostgresTimetableFact]
+    public async Task BreakBoundaryIsNotTreatedAsConsecutive()
+    {
+        await using var fixture = new PostgresTimetableFixture();
+        await fixture.InitializeAsync(subjectPeriods: 3, withBreak: true);
+        var result = await fixture.GenerateAsync();
+        var entries = result.Entries.Where(x => x.ClassGroupId == fixture.ClassId && x.SubjectId == fixture.SubjectIds[0]).ToList();
+        Assert.DoesNotContain(entries.Zip(entries.Skip(1)), pair =>
+            pair.First.DayOfWeek == pair.Second.DayOfWeek &&
+            pair.First.EndTime == new TimeOnly(9, 20) &&
+            pair.Second.StartTime == new TimeOnly(10, 0));
+    }
     private static async Task AssertParallel(int members)
     {
         await using var f = new PostgresTimetableFixture();

@@ -298,8 +298,13 @@ app.MapGet(
         "/api/tenant/context",
         (
             ICurrentUserContext currentUser,
-            ITenantContext tenant) =>
+            ITenantContext tenant,
+            SchoolPlatformDbContext database) =>
         {
+            var tenantName = database.Tenants
+                .Where(x => x.Id == tenant.TenantId && x.IsActive)
+                .Select(x => x.Name)
+                .SingleOrDefault() ?? tenant.TenantSlug;
             return Results.Ok(new
             {
                 currentUser.IsAuthenticated,
@@ -308,6 +313,7 @@ app.MapGet(
 
                 tenant.TenantId,
                 tenant.TenantSlug,
+                tenantName,
 
                 currentUser.MembershipId,
                 currentUser.Roles,

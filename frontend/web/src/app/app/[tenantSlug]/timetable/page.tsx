@@ -6,6 +6,8 @@ import {
 import { ClassSubjectRequirementsEditor } from "@/components/timetable/class-subject-requirements-editor";
 import { TimetableMvpPanel } from "@/components/timetable/timetable-mvp-panel";
 import { TimetableSettingsEditor } from "@/components/timetable/timetable-settings-editor";
+import { tenantDisplayName } from "@/lib/tenant-display-name";
+import { getSessionContext } from "@/lib/auth/session";
 
 import {
   getTimetableReadiness,
@@ -103,7 +105,8 @@ type TimetablePageProps = {
 export default async function TimetablePage({
   params,
 }: TimetablePageProps) {
-  await params;
+  const { tenantSlug } = await params;
+  const session = await getSessionContext();
 
   const setup =
     await getTimetableSetup();
@@ -190,6 +193,7 @@ export default async function TimetablePage({
         readiness={readiness}
         terms={terms}
         settings={setup.settings}
+        schoolName={session?.tenantName ?? tenantDisplayName(tenantSlug)}
       />
 
       <TimetableSettingsEditor

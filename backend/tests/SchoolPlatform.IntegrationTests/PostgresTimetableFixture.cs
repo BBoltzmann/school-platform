@@ -64,7 +64,7 @@ internal sealed class PostgresTimetableFixture : IAsyncDisposable, ITenantContex
         new DbContextOptionsBuilder<SchoolPlatformDbContext>().UseNpgsql(connection)
             .AddInterceptors(interceptors).Options);
 
-    public async Task InitializeAsync(int members = 0, bool baseline = false, bool slashName = false)
+    public async Task InitializeAsync(int members = 0, bool baseline = false, bool slashName = false, int subjectPeriods = 2, bool withBreak = false)
     {
         await using (var admin = new NpgsqlConnection(adminConnection))
         {
@@ -89,10 +89,14 @@ internal sealed class PostgresTimetableFixture : IAsyncDisposable, ITenantContex
         var second = new ClassGroup(TenantId, campus.Id, level.Id, "B");
         ClassId = first.Id;
         OtherClassId = second.Id;
-        var settings = new TimetableSettings(TenantId, SessionId, 60);
+        var settings = new TimetableSettings(TenantId, SessionId, subjectPeriods >= 3 ? 40 : 60);
+        var days = Enum.GetValues<DayOfWeek>().Where(day => day is >= DayOfWeek.Monday and <= DayOfWeek.Friday)
+            .Select(day => new TimetableDay(TenantId, settings.Id, day, new(8, 0), new(14, 0))).ToArray();
         db.AddRange(tenant, campus, session, term, level, first, second, settings,
-            new TimetableDay(TenantId, settings.Id, DayOfWeek.Monday, new(8, 0), new(14, 0)),
             new Student(TenantId, "STUDENT-1", "Fixture", null, "Student", new(2015, 1, 1), "Female", new(2026, 9, 1), null, null));
+        db.AddRange(days);
+        if (withBreak)
+            db.Add(new TimetableNonTeachingBlock(TenantId, days[0].Id, "Break", new(9, 20), new(10, 0), 1));
         ParallelSubjectGroup? group = members > 0 ? new(TenantId, SessionId, ClassId, "Options") : null;
         GroupId = group?.Id;
         if (group is not null) db.Add(group);
@@ -105,12 +109,12 @@ internal sealed class PostgresTimetableFixture : IAsyncDisposable, ITenantContex
             TeacherIds.Add(teacher.Id);
             var offering = new ClassSubject(TenantId, ClassId, subject.Id);
             db.AddRange(subject, teacher, offering,
-                new ClassSubjectRequirement(TenantId, SessionId, ClassId, subject.Id, 2),
+                new ClassSubjectRequirement(TenantId, SessionId, ClassId, subject.Id, subjectPeriods),
                 new TeachingAssignment(TenantId, teacher.Id, SessionId, ClassId, subject.Id));
             if (group is not null) db.Add(new ParallelSubjectGroupMember(TenantId, group.Id, offering.Id));
             if (i == 0)
                 db.AddRange(new ClassSubject(TenantId, OtherClassId, subject.Id),
-                    new ClassSubjectRequirement(TenantId, SessionId, OtherClassId, subject.Id, 2),
+                    new ClassSubjectRequirement(TenantId, SessionId, OtherClassId, subject.Id, subjectPeriods),
                     new TeachingAssignment(TenantId, teacher.Id, SessionId, OtherClassId, subject.Id));
         }
         await db.SaveChangesAsync();

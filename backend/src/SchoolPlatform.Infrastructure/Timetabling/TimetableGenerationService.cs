@@ -219,6 +219,9 @@ public sealed class TimetableGenerationService
         var subjectDayCount =
             new Dictionary<string, int>();
 
+        var parallelDayCount =
+            new Dictionary<string, int>();
+
         var teacherLoad =
             new Dictionary<Guid, int>();
 
@@ -247,23 +250,40 @@ public sealed class TimetableGenerationService
             var requiredPeriods = members[0].Requirement!.PeriodsPerWeek;
             if (members.Any(x => x.Requirement!.PeriodsPerWeek != requiredPeriods))
                 throw new InvalidOperationException("Subjects in a parallel group must have matching weekly period requirements.");
-            for (var lessonIndex = 0; lessonIndex < requiredPeriods; lessonIndex++)
+            var periodsRemaining = requiredPeriods;
+            for (var doubleIndex = 0; doubleIndex < requiredPeriods / 2 && requiredPeriods >= 3; doubleIndex++)
             {
-                TeachingSlot? selectedSlot = null;
-                foreach (var slot in slots)
+                var doubleCandidate = FindParallelDouble(members.Select(x => (x.Requirement!, x.Assignment!)).ToList(), group.Id, slots, classBusy, teacherBusy, availability, parallelDayCount);
+                if (doubleCandidate is null) break;
+                var occurrenceId = Guid.NewGuid();
+                foreach (var slot in new[] { doubleCandidate.First, doubleCandidate.Second })
                 {
-                    if (classBusy.Contains(BusyKey(group.ClassGroupId, slot)) || members.Any(x => !TeacherCanUseSlot(x.Assignment!, slot, availability) || teacherBusy.Contains(BusyKey(x.Assignment!.StaffMemberId, slot)))) continue;
-                    selectedSlot = slot;
-                    break;
+                    classBusy.Add(BusyKey(group.ClassGroupId, slot));
+                    foreach (var member in members)
+                    {
+                        teacherBusy.Add(BusyKey(member.Assignment!.StaffMemberId, slot));
+                        teacherLoad[member.Assignment.StaffMemberId] = teacherLoad.GetValueOrDefault(member.Assignment.StaffMemberId) + 1;
+                        parallelDayCount[$"{group.Id:N}|{(int)slot.DayOfWeek}"] = parallelDayCount.GetValueOrDefault($"{group.Id:N}|{(int)slot.DayOfWeek}") + 1;
+                        planned.Add(new PlannedEntry(member.Requirement!, member.Assignment!, slot, group.Id, occurrenceId));
+                    }
                 }
-                if (selectedSlot is null) throw new InvalidOperationException($"Unable to place all {requiredPeriods} shared periods for {group.DisplayName ?? "parallel subject group"}; placed {lessonIndex}. All member teachers must be available simultaneously.");
+                periodsRemaining -= 2;
+            }
+            for (var lessonIndex = 0; lessonIndex < periodsRemaining; lessonIndex++)
+            {
+                var selectedSlot = slots
+                    .Where(slot => !classBusy.Contains(BusyKey(group.ClassGroupId, slot)) && members.All(x => TeacherCanUseSlot(x.Assignment!, slot, availability) && !teacherBusy.Contains(BusyKey(x.Assignment!.StaffMemberId, slot))))
+                    .OrderBy(slot => parallelDayCount.GetValueOrDefault($"{group.Id:N}|{(int)slot.DayOfWeek}") * 10000 + (requiredPeriods >= 3 && HasAdjacentParallelEntry(planned, group.Id, slot) ? 1000 : 0) + slot.PeriodNumber)
+                    .FirstOrDefault();
+                if (selectedSlot is null) throw new InvalidOperationException($"Unable to place all {requiredPeriods} shared periods for {group.DisplayName ?? "parallel subject group"}; placed {requiredPeriods - periodsRemaining + lessonIndex}. All member teachers must be available simultaneously.");
                 var occurrenceId = Guid.NewGuid();
                 classBusy.Add(BusyKey(group.ClassGroupId, selectedSlot));
-                foreach (var member in members)
-                {
-                    teacherBusy.Add(BusyKey(member.Assignment!.StaffMemberId, selectedSlot));
-                    teacherLoad[member.Assignment.StaffMemberId] = teacherLoad.GetValueOrDefault(member.Assignment.StaffMemberId) + 1;
-                    planned.Add(new PlannedEntry(member.Requirement!, member.Assignment!, selectedSlot, group.Id, occurrenceId));
+                    foreach (var member in members)
+                    {
+                        teacherBusy.Add(BusyKey(member.Assignment!.StaffMemberId, selectedSlot));
+                        teacherLoad[member.Assignment.StaffMemberId] = teacherLoad.GetValueOrDefault(member.Assignment.StaffMemberId) + 1;
+                        parallelDayCount[$"{group.Id:N}|{(int)selectedSlot.DayOfWeek}"] = parallelDayCount.GetValueOrDefault($"{group.Id:N}|{(int)selectedSlot.DayOfWeek}") + 1;
+                        planned.Add(new PlannedEntry(member.Requirement!, member.Assignment!, selectedSlot, group.Id, occurrenceId));
                 }
             }
         }
@@ -287,10 +307,25 @@ public sealed class TimetableGenerationService
                     $"{requirement.ClassGroupName} — {requirement.SubjectName} has no assigned teacher.");
             }
 
+            var periodsRemaining = requirement.PeriodsPerWeek;
+            for (var doubleIndex = 0; doubleIndex < requirement.PeriodsPerWeek / 2 && requirement.PeriodsPerWeek >= 3; doubleIndex++)
+            {
+                var doubleCandidate = FindDouble(requirement, matchingAssignments, slots, classBusy, teacherBusy, availability, subjectDayCount, teacherLoad);
+                if (doubleCandidate is null) break;
+                classBusy.Add(BusyKey(requirement.ClassGroupId, doubleCandidate.First));
+                classBusy.Add(BusyKey(requirement.ClassGroupId, doubleCandidate.Second));
+                teacherBusy.Add(BusyKey(doubleCandidate.Assignment.StaffMemberId, doubleCandidate.First));
+                teacherBusy.Add(BusyKey(doubleCandidate.Assignment.StaffMemberId, doubleCandidate.Second));
+                teacherLoad[doubleCandidate.Assignment.StaffMemberId] = teacherLoad.GetValueOrDefault(doubleCandidate.Assignment.StaffMemberId) + 2;
+                subjectDayCount[SubjectDayKey(requirement, doubleCandidate.First)] = subjectDayCount.GetValueOrDefault(SubjectDayKey(requirement, doubleCandidate.First)) + 2;
+                planned.Add(new PlannedEntry(requirement, doubleCandidate.Assignment, doubleCandidate.First));
+                planned.Add(new PlannedEntry(requirement, doubleCandidate.Assignment, doubleCandidate.Second));
+                periodsRemaining -= 2;
+            }
+
             for (
                 var lessonIndex = 0;
-                lessonIndex <
-                    requirement.PeriodsPerWeek;
+                lessonIndex < periodsRemaining;
                 lessonIndex++)
             {
                 Candidate? best = null;
@@ -352,6 +387,7 @@ public sealed class TimetableGenerationService
 
                         var score =
                             sameSubjectToday * 10000 +
+                            (requirement.PeriodsPerWeek >= 3 && HasAdjacentSubjectEntry(planned, requirement, slot) ? 1000 : 0) +
                             currentTeacherLoad * 10 +
                             slot.PeriodNumber;
 
@@ -379,7 +415,7 @@ public sealed class TimetableGenerationService
                         .ToList();
                     var bestAvailability = availableByTeacher.FirstOrDefault();
                     throw new InvalidOperationException(
-                        $"Unable to place all {requirement.PeriodsPerWeek} weekly periods for {requirement.ClassGroupName} — {requirement.SubjectName}. Placed {lessonIndex} of {requirement.PeriodsPerWeek}; assigned teacher {bestAvailability?.StaffName ?? "unknown"} has {bestAvailability?.Count ?? 0} compatible timetable slots. Review teacher availability or timetable capacity.");
+                        $"Unable to place all {requirement.PeriodsPerWeek} weekly periods for {requirement.ClassGroupName} — {requirement.SubjectName}. Placed {requirement.PeriodsPerWeek - periodsRemaining + lessonIndex} of {requirement.PeriodsPerWeek}; assigned teacher {bestAvailability?.StaffName ?? "unknown"} has {bestAvailability?.Count ?? 0} compatible timetable slots. Review teacher availability or timetable capacity.");
                 }
 
                 var selectedAssignment =
@@ -860,6 +896,46 @@ public sealed class TimetableGenerationService
                             availability)));
     }
 
+    private static DoubleCandidate? FindDouble(RequirementRecord requirement, IReadOnlyCollection<AssignmentRecord> assignments, IReadOnlyList<TeachingSlot> slots, ISet<string> classBusy, ISet<string> teacherBusy, IReadOnlyCollection<AvailabilityRecord> availability, IReadOnlyDictionary<string, int> subjectDayCount, IReadOnlyDictionary<Guid, int> teacherLoad)
+    {
+        DoubleCandidate? best = null;
+        foreach (var assignment in assignments)
+        foreach (var first in slots)
+        foreach (var second in slots)
+        {
+            if (!AreConsecutive(first, second) || classBusy.Contains(BusyKey(requirement.ClassGroupId, first)) || classBusy.Contains(BusyKey(requirement.ClassGroupId, second)) || teacherBusy.Contains(BusyKey(assignment.StaffMemberId, first)) || teacherBusy.Contains(BusyKey(assignment.StaffMemberId, second)) || !TeacherCanUseSlot(assignment, first, availability) || !TeacherCanUseSlot(assignment, second, availability)) continue;
+            var dayCount = subjectDayCount.GetValueOrDefault(SubjectDayKey(requirement, first));
+            var score = dayCount * 10000 + teacherLoad.GetValueOrDefault(assignment.StaffMemberId) * 10 + first.PeriodNumber;
+            if (best is null || score < best.Score) best = new DoubleCandidate(assignment, first, second, score);
+        }
+        return best;
+    }
+
+    private static DoubleCandidate? FindParallelDouble(IReadOnlyList<(RequirementRecord Requirement, AssignmentRecord Assignment)> members, Guid groupId, IReadOnlyList<TeachingSlot> slots, ISet<string> classBusy, ISet<string> teacherBusy, IReadOnlyCollection<AvailabilityRecord> availability, IReadOnlyDictionary<string, int> parallelDayCount)
+    {
+        DoubleCandidate? best = null;
+        var classGroupId = members[0].Requirement.ClassGroupId;
+        foreach (var first in slots)
+        foreach (var second in slots)
+        {
+            if (!AreConsecutive(first, second) || classBusy.Contains(BusyKey(classGroupId, first)) || classBusy.Contains(BusyKey(classGroupId, second))) continue;
+            if (members.Any(member => !TeacherCanUseSlot(member.Assignment, first, availability) || !TeacherCanUseSlot(member.Assignment, second, availability) || teacherBusy.Contains(BusyKey(member.Assignment.StaffMemberId, first)) || teacherBusy.Contains(BusyKey(member.Assignment.StaffMemberId, second)))) continue;
+            var score = parallelDayCount.GetValueOrDefault($"{groupId:N}|{(int)first.DayOfWeek}") * 10000 + first.PeriodNumber;
+            if (best is null || score < best.Score) best = new DoubleCandidate(members[0].Assignment, first, second, score);
+        }
+        return best;
+    }
+
+    private static bool AreConsecutive(TeachingSlot first, TeachingSlot second) => first.DayOfWeek == second.DayOfWeek && first.EndTime == second.StartTime && second.PeriodNumber == first.PeriodNumber + 1;
+
+    private static bool HasAdjacentSubjectEntry(IReadOnlyCollection<PlannedEntry> planned, RequirementRecord requirement, TeachingSlot slot) =>
+        planned.Any(x => x.Requirement.ClassGroupId == requirement.ClassGroupId && x.Requirement.SubjectId == requirement.SubjectId && (AreConsecutive(x.Slot, slot) || AreConsecutive(slot, x.Slot)));
+
+    private static bool HasAdjacentParallelEntry(IReadOnlyCollection<PlannedEntry> planned, Guid groupId, TeachingSlot slot) =>
+        planned.Any(x => x.ParallelSubjectGroupId == groupId && (AreConsecutive(x.Slot, slot) || AreConsecutive(slot, x.Slot)));
+
+    private static string SubjectDayKey(RequirementRecord requirement, TeachingSlot slot) => $"{requirement.ClassGroupId:N}|{requirement.SubjectId:N}|{(int)slot.DayOfWeek}";
+
     private static string BusyKey(
         Guid entityId,
         TeachingSlot slot)
@@ -913,6 +989,12 @@ public sealed class TimetableGenerationService
     private sealed record Candidate(
         AssignmentRecord Assignment,
         TeachingSlot Slot,
+        int Score);
+
+    private sealed record DoubleCandidate(
+        AssignmentRecord Assignment,
+        TeachingSlot First,
+        TeachingSlot Second,
         int Score);
 
     private sealed record PlannedEntry(
