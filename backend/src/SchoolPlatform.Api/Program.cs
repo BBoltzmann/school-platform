@@ -66,6 +66,7 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IClassSubjectService,
     ClassSubjectService>();
+builder.Services.AddScoped<IParallelSubjectGroupService, ParallelSubjectGroupService>();
 
 builder.Services.AddScoped<
     SchoolPlatform.Application.Teacher.ITeacherPortalService,
@@ -297,8 +298,13 @@ app.MapGet(
         "/api/tenant/context",
         (
             ICurrentUserContext currentUser,
-            ITenantContext tenant) =>
+            ITenantContext tenant,
+            SchoolPlatformDbContext database) =>
         {
+            var tenantName = database.Tenants
+                .Where(x => x.Id == tenant.TenantId && x.IsActive)
+                .Select(x => x.Name)
+                .SingleOrDefault() ?? tenant.TenantSlug;
             return Results.Ok(new
             {
                 currentUser.IsAuthenticated,
@@ -307,6 +313,7 @@ app.MapGet(
 
                 tenant.TenantId,
                 tenant.TenantSlug,
+                tenantName,
 
                 currentUser.MembershipId,
                 currentUser.Roles,
@@ -589,6 +596,7 @@ if (app.Environment.IsDevelopment())
 
 SchoolPlatform.Api.Endpoints.AcademicManagementEndpoints.MapAcademicManagementEndpoints(app);
 SchoolPlatform.Api.Endpoints.ClassSubjectEndpoints.MapClassSubjectEndpoints(app);
+SchoolPlatform.Api.Endpoints.ParallelSubjectGroupEndpoints.MapParallelSubjectGroupEndpoints(app);
 SchoolPlatform.Api.Endpoints.TeacherPortalEndpoints.MapTeacherPortalEndpoints(app);
 
 SchoolPlatform.Api.Endpoints.StudentEndpoints.MapStudentEndpoints(app);

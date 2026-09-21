@@ -11,7 +11,7 @@ public sealed class GeneratedTimetableEntryConfiguration
         EntityTypeBuilder<GeneratedTimetableEntry> builder)
     {
         builder.ToTable(
-            "generated_timetable_entries");
+            "generated_timetable_entries", t => t.HasCheckConstraint("CK_timetable_entry_parallel_pair", "(\"ParallelSubjectGroupId\" IS NULL) = (\"ParallelOccurrenceId\" IS NULL)"));
 
         builder.HasKey(x => x.Id);
 
@@ -31,15 +31,14 @@ public sealed class GeneratedTimetableEntryConfiguration
             .HasColumnType("time")
             .IsRequired();
 
-        builder.HasIndex(x => new
-        {
-            x.TenantId,
-            x.GeneratedTimetableId,
-            x.ClassGroupId,
-            x.DayOfWeek,
-            x.PeriodNumber
-        })
-        .IsUnique();
+        builder.HasIndex(x => new { x.TenantId, x.GeneratedTimetableId, x.ClassGroupId, x.DayOfWeek, x.PeriodNumber })
+            .HasDatabaseName("IX_generated_timetable_entries_parallel_ordinary_slot")
+            .HasFilter("\"ParallelOccurrenceId\" IS NULL")
+            .IsUnique();
+        builder.HasIndex(x => new { x.TenantId, x.GeneratedTimetableId, x.ClassGroupId, x.DayOfWeek, x.PeriodNumber, x.ParallelOccurrenceId, x.SubjectId })
+            .HasDatabaseName("IX_generated_timetable_entries_parallel_occurrence_slot")
+            .HasFilter("\"ParallelOccurrenceId\" IS NOT NULL")
+            .IsUnique();
 
         builder.HasIndex(x => new
         {
@@ -59,5 +58,7 @@ public sealed class GeneratedTimetableEntryConfiguration
                 x.GeneratedTimetableId)
             .OnDelete(
                 DeleteBehavior.Cascade);
+
+        builder.HasOne(x => x.ParallelSubjectGroup).WithMany().HasForeignKey(x => x.ParallelSubjectGroupId).OnDelete(DeleteBehavior.Restrict);
     }
 }

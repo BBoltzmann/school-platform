@@ -11,21 +11,6 @@ type TenantLayoutProps = {
   }>;
 };
 
-function tenantDisplayName(slug: string) {
-  if (slug === "antioch-college") {
-    return "Antioch Royal College";
-  }
-
-  return slug
-    .split("-")
-    .map(
-      (word) =>
-        word.charAt(0).toUpperCase() +
-        word.slice(1)
-    )
-    .join(" ");
-}
-
 export default async function TenantLayout({
   children,
   params,
@@ -47,9 +32,7 @@ export default async function TenantLayout({
   return (
     <AdminShell
       tenantSlug={session.tenantSlug}
-      tenantName={tenantDisplayName(
-        session.tenantSlug
-      )}
+      tenantName={session.tenantName}
       email={session.email}
       roles={session.roles}
     >

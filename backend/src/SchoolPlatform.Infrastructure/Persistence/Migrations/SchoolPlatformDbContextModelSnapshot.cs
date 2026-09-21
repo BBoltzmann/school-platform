@@ -1133,38 +1133,6 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.ToTable("teacher_portal_invitations", (string)null);
                 });
 
-            modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", b =>
-                {
-                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
-                    b.Property<Guid>("AcademicSessionId").HasColumnType("uuid");
-                    b.Property<Guid>("ClassGroupId").HasColumnType("uuid");
-                    b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone");
-                    b.Property<string>("DisplayName").HasMaxLength(200).HasColumnType("character varying(200)");
-                    b.Property<bool>("IsActive").HasColumnType("boolean");
-                    b.Property<Guid>("TenantId").HasColumnType("uuid");
-                    b.Property<DateTime?>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
-                    b.HasKey("Id");
-                    b.HasIndex("AcademicSessionId");
-                    b.HasIndex("ClassGroupId");
-                    b.HasIndex("TenantId", "AcademicSessionId", "ClassGroupId", "IsActive");
-                    b.ToTable("parallel_subject_groups", (string)null);
-                });
-
-            modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroupMember", b =>
-                {
-                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
-                    b.Property<Guid>("ClassSubjectId").HasColumnType("uuid");
-                    b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone");
-                    b.Property<Guid>("ParallelSubjectGroupId").HasColumnType("uuid");
-                    b.Property<Guid>("TenantId").HasColumnType("uuid");
-                    b.Property<DateTime?>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
-                    b.HasKey("Id");
-                    b.HasIndex("ClassSubjectId");
-                    b.HasIndex("ParallelSubjectGroupId", "ClassSubjectId").IsUnique();
-                    b.HasIndex("TenantId", "ClassSubjectId");
-                    b.ToTable("parallel_subject_group_members", (string)null);
-                });
-
             modelBuilder.Entity("SchoolPlatform.Domain.Identity.TenantMembership", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2160,10 +2128,19 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("AcademicTermId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("ActivatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("GeneratedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("SupersededAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("TenantId")
@@ -2172,12 +2149,21 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TenantId", "AcademicSessionId");
 
-                    b.HasIndex("TenantId", "AcademicTermId")
-                        .IsUnique();
+                    b.HasIndex("TenantId", "AcademicSessionId", "AcademicTermId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_generated_timetables_active_scope")
+                        .HasFilter("\"IsActive\" = true");
+
+                    b.HasIndex("TenantId", "AcademicSessionId", "AcademicTermId", "VersionNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_generated_timetables_version_scope");
 
                     b.ToTable("generated_timetables", (string)null);
                 });
@@ -2201,6 +2187,12 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                         .HasColumnType("time");
 
                     b.Property<Guid>("GeneratedTimetableId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ParallelOccurrenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ParallelSubjectGroupId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("PeriodNumber")
@@ -2227,39 +2219,101 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("GeneratedTimetableId");
 
+                    b.HasIndex("ParallelSubjectGroupId");
+
                     b.HasIndex("SubjectId");
 
                     b.HasIndex("TenantId", "GeneratedTimetableId", "ClassGroupId", "DayOfWeek", "PeriodNumber")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_generated_timetable_entries_parallel_ordinary_slot")
+                        .HasFilter("\"ParallelOccurrenceId\" IS NULL");
 
                     b.HasIndex("TenantId", "GeneratedTimetableId", "StaffMemberId", "DayOfWeek", "PeriodNumber")
                         .IsUnique();
 
-                    b.ToTable("generated_timetable_entries", (string)null);
+                    b.HasIndex("TenantId", "GeneratedTimetableId", "ClassGroupId", "DayOfWeek", "PeriodNumber", "ParallelOccurrenceId", "SubjectId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_generated_timetable_entries_parallel_occurrence_slot")
+                        .HasFilter("\"ParallelOccurrenceId\" IS NOT NULL");
+
+                    b.ToTable("generated_timetable_entries", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_timetable_entry_parallel_pair", "(\"ParallelSubjectGroupId\" IS NULL) = (\"ParallelOccurrenceId\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", b =>
                 {
-                    b.HasOne("SchoolPlatform.Domain.Academics.AcademicSession", "AcademicSession")
-                        .WithMany().HasForeignKey("AcademicSessionId")
-                        .OnDelete(DeleteBehavior.Restrict).IsRequired();
-                    b.HasOne("SchoolPlatform.Domain.Academics.ClassGroup", "ClassGroup")
-                        .WithMany().HasForeignKey("ClassGroupId")
-                        .OnDelete(DeleteBehavior.Restrict).IsRequired();
-                    b.Navigation("AcademicSession");
-                    b.Navigation("ClassGroup");
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AcademicSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassGroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AcademicSessionId");
+
+                    b.HasIndex("ClassGroupId");
+
+                    b.HasIndex("TenantId", "AcademicSessionId", "ClassGroupId", "IsActive");
+
+                    b.ToTable("parallel_subject_groups", (string)null);
                 });
 
             modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroupMember", b =>
                 {
-                    b.HasOne("SchoolPlatform.Domain.Academics.ClassSubject", "ClassSubject")
-                        .WithMany().HasForeignKey("ClassSubjectId")
-                        .OnDelete(DeleteBehavior.Restrict).IsRequired();
-                    b.HasOne("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", "ParallelSubjectGroup")
-                        .WithMany("Members").HasForeignKey("ParallelSubjectGroupId")
-                        .OnDelete(DeleteBehavior.Cascade).IsRequired();
-                    b.Navigation("ClassSubject");
-                    b.Navigation("ParallelSubjectGroup");
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassSubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ParallelSubjectGroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClassSubjectId");
+
+                    b.HasIndex("ParallelSubjectGroupId");
+
+                    b.HasIndex("TenantId", "ClassSubjectId");
+
+                    b.HasIndex("TenantId", "ParallelSubjectGroupId", "ClassSubjectId")
+                        .IsUnique();
+
+                    b.ToTable("parallel_subject_group_members", (string)null);
                 });
 
             modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.TimetableDay", b =>
@@ -2865,6 +2919,11 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", "ParallelSubjectGroup")
+                        .WithMany()
+                        .HasForeignKey("ParallelSubjectGroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SchoolPlatform.Domain.Academics.Subject", "Subject")
                         .WithMany()
                         .HasForeignKey("SubjectId")
@@ -2875,7 +2934,47 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
 
                     b.Navigation("GeneratedTimetable");
 
+                    b.Navigation("ParallelSubjectGroup");
+
                     b.Navigation("Subject");
+                });
+
+            modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", b =>
+                {
+                    b.HasOne("SchoolPlatform.Domain.Academics.AcademicSession", "AcademicSession")
+                        .WithMany()
+                        .HasForeignKey("AcademicSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SchoolPlatform.Domain.Academics.ClassGroup", "ClassGroup")
+                        .WithMany()
+                        .HasForeignKey("ClassGroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AcademicSession");
+
+                    b.Navigation("ClassGroup");
+                });
+
+            modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroupMember", b =>
+                {
+                    b.HasOne("SchoolPlatform.Domain.Academics.ClassSubject", "ClassSubject")
+                        .WithMany()
+                        .HasForeignKey("ClassSubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", "ParallelSubjectGroup")
+                        .WithMany("Members")
+                        .HasForeignKey("ParallelSubjectGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ClassSubject");
+
+                    b.Navigation("ParallelSubjectGroup");
                 });
 
             modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.TimetableDay", b =>
@@ -3022,6 +3121,11 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.GeneratedTimetable", b =>
                 {
                     b.Navigation("Entries");
+                });
+
+            modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", b =>
+                {
+                    b.Navigation("Members");
                 });
 
             modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.TimetableDay", b =>

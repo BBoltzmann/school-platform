@@ -1,0 +1,78 @@
+using Microsoft.EntityFrameworkCore;
+using SchoolPlatform.Application.Academics;
+using SchoolPlatform.Application.Common.Security;
+using SchoolPlatform.Domain.Timetabling;
+using SchoolPlatform.Infrastructure.Persistence;
+
+namespace SchoolPlatform.Infrastructure.Academics;
+
+public sealed class ParallelSubjectGroupService(
+    SchoolPlatformDbContext database,
+    ITenantContext tenantContext) : IParallelSubjectGroupService
+{
+    public async Task<IReadOnlyCollection<ParallelSubjectGroupResult>> ListAsync(Guid classGroupId, Guid academicSessionId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantContext.TenantId;
+        await EnsureClassAndSessionAsync(classGroupId, academicSessionId, cancellationToken);
+        var groups = await database.ParallelSubjectGroups.AsNoTracking().Include(x => x.Members).ThenInclude(x => x.ClassSubject).ThenInclude(x => x.Subject).Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.AcademicSessionId == academicSessionId && x.IsActive).ToListAsync(cancellationToken);
+        var subjectIds = groups.SelectMany(x => x.Members).Select(x => x.ClassSubject.SubjectId).Distinct().ToArray();
+        var requirements = await database.ClassSubjectRequirements.AsNoTracking().Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.AcademicSessionId == academicSessionId && x.IsActive && subjectIds.Contains(x.SubjectId)).ToDictionaryAsync(x => x.SubjectId, cancellationToken);
+        var assignments = await database.TeachingAssignments.AsNoTracking().Include(x => x.StaffMember).Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.AcademicSessionId == academicSessionId && x.IsActive && subjectIds.Contains(x.SubjectId)).ToListAsync(cancellationToken);
+        return groups.Select(x => new ParallelSubjectGroupResult(x.Id, x.AcademicSessionId, x.ClassGroupId, x.DisplayName, x.IsActive, x.Members.Select(m => requirements.GetValueOrDefault(m.ClassSubject.SubjectId)?.PeriodsPerWeek ?? 0).FirstOrDefault(), x.Members.Select(m => { var assignment = assignments.FirstOrDefault(a => a.SubjectId == m.ClassSubject.SubjectId); var staff = assignment?.StaffMember; var name = staff is null ? null : string.Join(" ", new[] { staff.FirstName, staff.MiddleName, staff.LastName }.Where(v => !string.IsNullOrWhiteSpace(v))); return new ParallelSubjectGroupMemberResult(m.ClassSubjectId, m.ClassSubject.SubjectId, m.ClassSubject.Subject.Name, m.ClassSubject.Subject.Code, requirements.GetValueOrDefault(m.ClassSubject.SubjectId)?.PeriodsPerWeek ?? 0, name); }).ToArray())).ToArray();
+    }
+
+    public async Task<ParallelSubjectGroupResult> CreateAsync(Guid classGroupId, SaveParallelSubjectGroupRequest request, CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantContext.TenantId;
+        await EnsureClassAndSessionAsync(classGroupId, request.AcademicSessionId, cancellationToken);
+        var classSubjects = await ValidateMembersAsync(classGroupId, request, null, cancellationToken);
+        var group = new ParallelSubjectGroup(tenantId, request.AcademicSessionId, classGroupId, request.DisplayName);
+        database.ParallelSubjectGroups.Add(group);
+        foreach (var classSubject in classSubjects) group.Members.Add(new ParallelSubjectGroupMember(tenantId, group.Id, classSubject.Id));
+        await database.SaveChangesAsync(cancellationToken);
+        return (await ListAsync(classGroupId, request.AcademicSessionId, cancellationToken)).Single(x => x.Id == group.Id);
+    }
+
+    public async Task<ParallelSubjectGroupResult> UpdateAsync(Guid classGroupId, Guid groupId, SaveParallelSubjectGroupRequest request, CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantContext.TenantId;
+        var group = await database.ParallelSubjectGroups.Include(x => x.Members).SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantId && x.ClassGroupId == classGroupId, cancellationToken) ?? throw new InvalidOperationException("Parallel subject group was not found.");
+        if (group.AcademicSessionId != request.AcademicSessionId) throw new InvalidOperationException("The academic session cannot be changed for this group.");
+        var classSubjects = await ValidateMembersAsync(classGroupId, request, groupId, cancellationToken);
+        group.UpdateDisplayName(request.DisplayName);
+        database.ParallelSubjectGroupMembers.RemoveRange(group.Members);
+        foreach (var classSubject in classSubjects) database.ParallelSubjectGroupMembers.Add(new ParallelSubjectGroupMember(tenantId, group.Id, classSubject.Id));
+        await database.SaveChangesAsync(cancellationToken);
+        return (await ListAsync(classGroupId, request.AcademicSessionId, cancellationToken)).Single(x => x.Id == group.Id);
+    }
+
+    public async Task DeleteAsync(Guid classGroupId, Guid groupId, CancellationToken cancellationToken = default)
+    {
+        var group = await database.ParallelSubjectGroups.SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantContext.TenantId && x.ClassGroupId == classGroupId, cancellationToken) ?? throw new InvalidOperationException("Parallel subject group was not found.");
+        group.Deactivate();
+        await database.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<List<SchoolPlatform.Domain.Academics.ClassSubject>> ValidateMembersAsync(Guid classGroupId, SaveParallelSubjectGroupRequest request, Guid? currentGroupId, CancellationToken cancellationToken)
+    {
+        var ids = request.ClassSubjectIds.Distinct().ToArray();
+        if (ids.Length < 2) throw new InvalidOperationException("A parallel subject group must contain at least two subjects.");
+        var tenantId = tenantContext.TenantId;
+        var classSubjects = await database.ClassSubjects.Include(x => x.Subject).Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && ids.Contains(x.Id)).ToListAsync(cancellationToken);
+        if (classSubjects.Count != ids.Length) throw new InvalidOperationException("Every selected subject must be offered by this class.");
+        var requirements = await database.ClassSubjectRequirements.Where(x => x.TenantId == tenantId && x.AcademicSessionId == request.AcademicSessionId && x.ClassGroupId == classGroupId && x.IsActive && classSubjects.Select(cs => cs.SubjectId).Contains(x.SubjectId)).ToListAsync(cancellationToken);
+        if (requirements.Count != ids.Length) throw new InvalidOperationException("Every selected subject must have an active weekly requirement for this class and session.");
+        if (requirements.Select(x => x.PeriodsPerWeek).Distinct().Count() != 1) throw new InvalidOperationException("Subjects in a parallel group must have matching weekly period requirements.");
+        var alreadyGrouped = await database.ParallelSubjectGroupMembers.Include(x => x.ParallelSubjectGroup).Where(x => x.TenantId == tenantId && x.ParallelSubjectGroup.ClassGroupId == classGroupId && x.ParallelSubjectGroup.AcademicSessionId == request.AcademicSessionId && x.ParallelSubjectGroup.IsActive && (!currentGroupId.HasValue || x.ParallelSubjectGroupId != currentGroupId.Value) && ids.Contains(x.ClassSubjectId)).AnyAsync(cancellationToken);
+        if (alreadyGrouped) throw new InvalidOperationException("A selected subject already belongs to another active parallel group for this class and session.");
+        return classSubjects;
+    }
+
+    private async Task EnsureClassAndSessionAsync(Guid classGroupId, Guid academicSessionId, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        if (!await database.ClassGroups.AnyAsync(x => x.Id == classGroupId && x.TenantId == tenantId && x.IsActive, cancellationToken)) throw new InvalidOperationException("Class was not found.");
+        if (!await database.AcademicSessions.AnyAsync(x => x.Id == academicSessionId && x.TenantId == tenantId && x.IsActive, cancellationToken)) throw new InvalidOperationException("Academic session was not found.");
+    }
+
+}

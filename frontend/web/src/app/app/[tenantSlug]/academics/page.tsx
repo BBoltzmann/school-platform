@@ -395,7 +395,7 @@ export default async function AcademicsPage() {
                             campuses={setup.campuses}
                             levels={setup.levels}
                           />
-                          <ClassSubjectActions classGroup={classGroup} subjects={setup.subjects} />
+                          <ClassSubjectActions classGroup={classGroup} subjects={setup.subjects} academicSessionId={currentSession?.id ?? ""} />
                         </td>
                       </tr>
                     )

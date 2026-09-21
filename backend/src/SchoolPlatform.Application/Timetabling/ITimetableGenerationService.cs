@@ -10,6 +10,8 @@ public interface ITimetableGenerationService
         Guid academicTermId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<GeneratedTimetableVersionResult>> GetHistoryAsync(Guid academicTermId, CancellationToken cancellationToken = default);
+
     Task ResetAsync(
         Guid academicTermId,
         CancellationToken cancellationToken = default);

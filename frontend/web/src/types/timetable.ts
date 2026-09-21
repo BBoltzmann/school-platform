@@ -76,6 +76,10 @@ export type TimetableBlockInput = {
   name: string;
   startTime: string;
   endTime: string;
+  parallelSubjectGroupId?: string | null;
+  parallelOccurrenceId?: string | null;
+  parallelDisplayName?: string | null;
+  parallelMembers?: { subjectId: string; staffMemberId: string; subjectName: string; staffName: string }[];
 };
 
 export type TimetableDayInput = {
@@ -124,6 +128,10 @@ export type GeneratedTimetableEntry = {
   periodNumber: number;
   startTime: string;
   endTime: string;
+  parallelSubjectGroupId?: string | null;
+  parallelOccurrenceId?: string | null;
+  parallelDisplayName?: string | null;
+  parallelMembers?: { subjectId: string; staffMemberId: string; subjectName: string; staffName: string }[];
 };
 
 export type GeneratedTimetable = {
@@ -131,6 +139,8 @@ export type GeneratedTimetable = {
   academicSessionId: string;
   academicTermId: string;
   generatedAtUtc: string;
+  versionNumber: number;
+  isActive: boolean;
   entryCount: number;
   entries: GeneratedTimetableEntry[];
 };

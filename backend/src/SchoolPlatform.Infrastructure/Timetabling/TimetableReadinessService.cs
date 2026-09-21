@@ -191,6 +191,12 @@ public sealed class TimetableReadinessService
                 .ToListAsync(
                     cancellationToken);
 
+        var parallelGroups = await _database.ParallelSubjectGroups
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.IsActive)
+            .Select(x => new { x.ClassGroupId, Members = x.Members.Select(m => m.ClassSubject.SubjectId).ToList() })
+            .ToListAsync(cancellationToken);
+
         var assignments =
             await _database.TeachingAssignments
                 .AsNoTracking()
@@ -275,9 +281,16 @@ public sealed class TimetableReadinessService
                         $"{classGroup.AcademicLevelName} — {classGroup.Name} has no weekly subject requirements."));
             }
 
-            var classPeriodTotal =
-                classRequirements.Sum(x =>
-                    x.PeriodsPerWeek);
+            var groupedSubjects = parallelGroups
+                .Where(g => g.ClassGroupId == classGroup.Id)
+                .SelectMany(g => g.Members)
+                .ToHashSet();
+            var classPeriodTotal = classRequirements
+                .Where(x => !groupedSubjects.Contains(x.SubjectId))
+                .Sum(x => x.PeriodsPerWeek)
+                + parallelGroups.Where(g => g.ClassGroupId == classGroup.Id)
+                    .Select(g => classRequirements.Where(r => g.Members.Contains(r.SubjectId)).Select(r => r.PeriodsPerWeek).DefaultIfEmpty(0).Max())
+                    .Sum();
 
             if (weeklyCapacity > 0 &&
                 classPeriodTotal >

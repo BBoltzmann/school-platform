@@ -2,11 +2,14 @@ import { redirect } from "next/navigation";
 import { authenticatedBackendFetch } from "@/lib/api/authenticated-backend";
 import { TeacherPortalView } from "@/components/teacher/teacher-portal-view";
 import type { TeacherPortal } from "@/types/teacher";
+import { tenantDisplayName } from "@/lib/tenant-display-name";
+import { getSessionContext } from "@/lib/auth/session";
 
 export default async function TeacherSectionPage({ params }: { params: Promise<{ tenantSlug: string; section: string }> }) {
   const { tenantSlug, section } = await params;
   const response = await authenticatedBackendFetch("/api/me/teacher-portal");
   if (!response || response.status === 401 || response.status === 403) redirect(`/app/${tenantSlug}/dashboard`);
   if (!response.ok) throw new Error("Teacher portal could not be loaded.");
-  return <TeacherPortalView data={await response.json() as TeacherPortal} section={section} />;
+  const session = await getSessionContext();
+  return <TeacherPortalView data={await response.json() as TeacherPortal} section={section} schoolName={session?.tenantName ?? tenantDisplayName(tenantSlug)} />;
 }

@@ -93,6 +93,15 @@ public sealed class TimetableGenerationService
                 "The selected academic term was not found in the current academic session.");
         }
 
+        await using var transaction = await _database.Database.BeginTransactionAsync(cancellationToken);
+        await LockTimetableScopeAsync(tenantId, session.Id, request.AcademicTermId, cancellationToken);
+
+        var activeTimetable = request.ClassGroupId.HasValue
+            ? await _database.GeneratedTimetables.AsNoTracking().Include(x => x.Entries).SingleOrDefaultAsync(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.AcademicTermId == request.AcademicTermId && x.IsActive, cancellationToken)
+            : null;
+        if (request.ClassGroupId.HasValue && activeTimetable is null)
+            throw new InvalidOperationException("An active timetable is required before regenerating one class.");
+
         var settings =
             await _database.TimetableSettings
                 .AsNoTracking()
@@ -135,6 +144,8 @@ public sealed class TimetableGenerationService
                     x.PeriodsPerWeek))
                 .ToListAsync(
                     cancellationToken);
+        if (request.ClassGroupId.HasValue)
+            requirements = requirements.Where(x => x.ClassGroupId == request.ClassGroupId.Value).ToList();
 
         var assignments =
             await _database.TeachingAssignments
@@ -176,6 +187,13 @@ public sealed class TimetableGenerationService
                 .ToListAsync(
                     cancellationToken);
 
+        var configuredGroups = await _database.ParallelSubjectGroups
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.IsActive && (!request.ClassGroupId.HasValue || x.ClassGroupId == request.ClassGroupId.Value))
+            .Select(x => new { x.Id, x.ClassGroupId, x.DisplayName, Members = x.Members.Select(m => m.ClassSubject.SubjectId).ToList() })
+            .ToListAsync(cancellationToken);
+        var groupedSubjects = configuredGroups.SelectMany(x => x.Members.Select(subjectId => (x.ClassGroupId, subjectId))).ToHashSet();
+
         var orderedRequirements =
             requirements
                 .OrderBy(x =>
@@ -201,15 +219,78 @@ public sealed class TimetableGenerationService
         var subjectDayCount =
             new Dictionary<string, int>();
 
+        var parallelDayCount =
+            new Dictionary<string, int>();
+
         var teacherLoad =
             new Dictionary<Guid, int>();
 
         var planned =
             new List<PlannedEntry>();
 
+        if (activeTimetable is not null)
+        {
+            foreach (var fixedEntry in activeTimetable.Entries.Where(x => x.ClassGroupId != request.ClassGroupId))
+            {
+                var slot = new TeachingSlot(fixedEntry.DayOfWeek, fixedEntry.PeriodNumber, fixedEntry.StartTime, fixedEntry.EndTime);
+                classBusy.Add(BusyKey(fixedEntry.ClassGroupId, slot));
+                teacherBusy.Add(BusyKey(fixedEntry.StaffMemberId, slot));
+            }
+        }
+
+        foreach (var group in configuredGroups)
+        {
+            var members = group.Members.Select(subjectId => new
+            {
+                Requirement = requirements.SingleOrDefault(x => x.ClassGroupId == group.ClassGroupId && x.SubjectId == subjectId),
+                Assignment = assignments.FirstOrDefault(x => x.ClassGroupId == group.ClassGroupId && x.SubjectId == subjectId)
+            }).ToList();
+            if (members.Any(x => x.Requirement is null || x.Assignment is null))
+                throw new InvalidOperationException($"{group.DisplayName ?? "Parallel subject group"} has a missing weekly requirement or teacher assignment.");
+            var requiredPeriods = members[0].Requirement!.PeriodsPerWeek;
+            if (members.Any(x => x.Requirement!.PeriodsPerWeek != requiredPeriods))
+                throw new InvalidOperationException("Subjects in a parallel group must have matching weekly period requirements.");
+            var periodsRemaining = requiredPeriods;
+            for (var doubleIndex = 0; doubleIndex < requiredPeriods / 2 && requiredPeriods >= 3; doubleIndex++)
+            {
+                var doubleCandidate = FindParallelDouble(members.Select(x => (x.Requirement!, x.Assignment!)).ToList(), group.Id, slots, classBusy, teacherBusy, availability, parallelDayCount);
+                if (doubleCandidate is null) break;
+                var occurrenceId = Guid.NewGuid();
+                foreach (var slot in new[] { doubleCandidate.First, doubleCandidate.Second })
+                {
+                    classBusy.Add(BusyKey(group.ClassGroupId, slot));
+                    foreach (var member in members)
+                    {
+                        teacherBusy.Add(BusyKey(member.Assignment!.StaffMemberId, slot));
+                        teacherLoad[member.Assignment.StaffMemberId] = teacherLoad.GetValueOrDefault(member.Assignment.StaffMemberId) + 1;
+                        parallelDayCount[$"{group.Id:N}|{(int)slot.DayOfWeek}"] = parallelDayCount.GetValueOrDefault($"{group.Id:N}|{(int)slot.DayOfWeek}") + 1;
+                        planned.Add(new PlannedEntry(member.Requirement!, member.Assignment!, slot, group.Id, occurrenceId));
+                    }
+                }
+                periodsRemaining -= 2;
+            }
+            for (var lessonIndex = 0; lessonIndex < periodsRemaining; lessonIndex++)
+            {
+                var selectedSlot = slots
+                    .Where(slot => !classBusy.Contains(BusyKey(group.ClassGroupId, slot)) && members.All(x => TeacherCanUseSlot(x.Assignment!, slot, availability) && !teacherBusy.Contains(BusyKey(x.Assignment!.StaffMemberId, slot))))
+                    .OrderBy(slot => parallelDayCount.GetValueOrDefault($"{group.Id:N}|{(int)slot.DayOfWeek}") * 10000 + (requiredPeriods >= 3 && HasAdjacentParallelEntry(planned, group.Id, slot) ? 1000 : 0) + slot.PeriodNumber)
+                    .FirstOrDefault();
+                if (selectedSlot is null) throw new InvalidOperationException($"Unable to place all {requiredPeriods} shared periods for {group.DisplayName ?? "parallel subject group"}; placed {requiredPeriods - periodsRemaining + lessonIndex}. All member teachers must be available simultaneously.");
+                var occurrenceId = Guid.NewGuid();
+                classBusy.Add(BusyKey(group.ClassGroupId, selectedSlot));
+                    foreach (var member in members)
+                    {
+                        teacherBusy.Add(BusyKey(member.Assignment!.StaffMemberId, selectedSlot));
+                        teacherLoad[member.Assignment.StaffMemberId] = teacherLoad.GetValueOrDefault(member.Assignment.StaffMemberId) + 1;
+                        parallelDayCount[$"{group.Id:N}|{(int)selectedSlot.DayOfWeek}"] = parallelDayCount.GetValueOrDefault($"{group.Id:N}|{(int)selectedSlot.DayOfWeek}") + 1;
+                        planned.Add(new PlannedEntry(member.Requirement!, member.Assignment!, selectedSlot, group.Id, occurrenceId));
+                }
+            }
+        }
+
         foreach (
             var requirement
-            in orderedRequirements)
+            in orderedRequirements.Where(x => !groupedSubjects.Contains((x.ClassGroupId, x.SubjectId))))
         {
             var matchingAssignments =
                 assignments
@@ -226,10 +307,25 @@ public sealed class TimetableGenerationService
                     $"{requirement.ClassGroupName} — {requirement.SubjectName} has no assigned teacher.");
             }
 
+            var periodsRemaining = requirement.PeriodsPerWeek;
+            for (var doubleIndex = 0; doubleIndex < requirement.PeriodsPerWeek / 2 && requirement.PeriodsPerWeek >= 3; doubleIndex++)
+            {
+                var doubleCandidate = FindDouble(requirement, matchingAssignments, slots, classBusy, teacherBusy, availability, subjectDayCount, teacherLoad);
+                if (doubleCandidate is null) break;
+                classBusy.Add(BusyKey(requirement.ClassGroupId, doubleCandidate.First));
+                classBusy.Add(BusyKey(requirement.ClassGroupId, doubleCandidate.Second));
+                teacherBusy.Add(BusyKey(doubleCandidate.Assignment.StaffMemberId, doubleCandidate.First));
+                teacherBusy.Add(BusyKey(doubleCandidate.Assignment.StaffMemberId, doubleCandidate.Second));
+                teacherLoad[doubleCandidate.Assignment.StaffMemberId] = teacherLoad.GetValueOrDefault(doubleCandidate.Assignment.StaffMemberId) + 2;
+                subjectDayCount[SubjectDayKey(requirement, doubleCandidate.First)] = subjectDayCount.GetValueOrDefault(SubjectDayKey(requirement, doubleCandidate.First)) + 2;
+                planned.Add(new PlannedEntry(requirement, doubleCandidate.Assignment, doubleCandidate.First));
+                planned.Add(new PlannedEntry(requirement, doubleCandidate.Assignment, doubleCandidate.Second));
+                periodsRemaining -= 2;
+            }
+
             for (
                 var lessonIndex = 0;
-                lessonIndex <
-                    requirement.PeriodsPerWeek;
+                lessonIndex < periodsRemaining;
                 lessonIndex++)
             {
                 Candidate? best = null;
@@ -291,6 +387,7 @@ public sealed class TimetableGenerationService
 
                         var score =
                             sameSubjectToday * 10000 +
+                            (requirement.PeriodsPerWeek >= 3 && HasAdjacentSubjectEntry(planned, requirement, slot) ? 1000 : 0) +
                             currentTeacherLoad * 10 +
                             slot.PeriodNumber;
 
@@ -318,7 +415,7 @@ public sealed class TimetableGenerationService
                         .ToList();
                     var bestAvailability = availableByTeacher.FirstOrDefault();
                     throw new InvalidOperationException(
-                        $"Unable to place all {requirement.PeriodsPerWeek} weekly periods for {requirement.ClassGroupName} — {requirement.SubjectName}. Placed {lessonIndex} of {requirement.PeriodsPerWeek}; assigned teacher {bestAvailability?.StaffName ?? "unknown"} has {bestAvailability?.Count ?? 0} compatible timetable slots. Review teacher availability or timetable capacity.");
+                        $"Unable to place all {requirement.PeriodsPerWeek} weekly periods for {requirement.ClassGroupName} — {requirement.SubjectName}. Placed {requirement.PeriodsPerWeek - periodsRemaining + lessonIndex} of {requirement.PeriodsPerWeek}; assigned teacher {bestAvailability?.StaffName ?? "unknown"} has {bestAvailability?.Count ?? 0} compatible timetable slots. Review teacher availability or timetable capacity.");
                 }
 
                 var selectedAssignment =
@@ -364,47 +461,26 @@ public sealed class TimetableGenerationService
             }
         }
 
-        await using var transaction =
-            await _database.Database
-                .BeginTransactionAsync(
-                    cancellationToken);
-
         try
         {
-            var timetable =
-                await _database.GeneratedTimetables
-                    .Include(x => x.Entries)
-                    .SingleOrDefaultAsync(
-                        x =>
-                            x.TenantId == tenantId &&
-                            x.AcademicTermId ==
-                                request.AcademicTermId,
-                        cancellationToken);
-
-            if (timetable is null)
+            var previous = await _database.GeneratedTimetables.Include(x => x.Entries)
+                .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.AcademicTermId == request.AcademicTermId && x.IsActive, cancellationToken);
+            var nextVersion = (await _database.GeneratedTimetables.Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.AcademicTermId == request.AcademicTermId).Select(x => (int?)x.VersionNumber).MaxAsync(cancellationToken) ?? 0) + 1;
+            var timetable = new GeneratedTimetable(tenantId, session.Id, request.AcademicTermId);
+            timetable.SetVersion(nextVersion);
+            // Release the filtered unique active-version key before inserting its replacement.
+            if (previous is not null)
             {
-                timetable =
-                    new GeneratedTimetable(
-                        tenantId,
-                        session.Id,
-                        request.AcademicTermId);
-
-                _database.GeneratedTimetables.Add(
-                    timetable);
-
-                await _database.SaveChangesAsync(
-                    cancellationToken);
+                previous.MarkHistorical();
+                await _database.SaveChangesAsync(cancellationToken);
             }
-            else
+            _database.GeneratedTimetables.Add(timetable);
+            await _database.SaveChangesAsync(cancellationToken);
+
+            if (request.ClassGroupId.HasValue && previous is not null)
             {
-                _database.GeneratedTimetableEntries
-                    .RemoveRange(
-                        timetable.Entries);
-
-                timetable.MarkRegenerated();
-
-                await _database.SaveChangesAsync(
-                    cancellationToken);
+                foreach (var fixedEntry in previous.Entries.Where(x => x.ClassGroupId != request.ClassGroupId))
+                    _database.GeneratedTimetableEntries.Add(new GeneratedTimetableEntry(tenantId, timetable.Id, fixedEntry.ClassGroupId, fixedEntry.SubjectId, fixedEntry.StaffMemberId, fixedEntry.DayOfWeek, fixedEntry.PeriodNumber, fixedEntry.StartTime, fixedEntry.EndTime, fixedEntry.ParallelSubjectGroupId, fixedEntry.ParallelOccurrenceId));
             }
 
             foreach (
@@ -421,20 +497,20 @@ public sealed class TimetableGenerationService
                         item.Slot.DayOfWeek,
                         item.Slot.PeriodNumber,
                         item.Slot.StartTime,
-                        item.Slot.EndTime));
+                        item.Slot.EndTime,
+                        item.ParallelSubjectGroupId,
+                        item.ParallelOccurrenceId));
             }
 
             await _database.SaveChangesAsync(
                 cancellationToken);
 
-            await transaction.CommitAsync(
-                cancellationToken);
-
-            return await GetAsync(
-                       request.AcademicTermId,
-                       cancellationToken)
-                   ?? throw new InvalidOperationException(
-                       "Generated timetable could not be loaded.");
+            // Read our own result while holding the scope lock; a later regeneration must
+            // not replace the version returned to this caller after commit.
+            var result = await GetAsync(request.AcademicTermId, cancellationToken)
+                ?? throw new InvalidOperationException("Generated timetable could not be loaded.");
+            await transaction.CommitAsync(cancellationToken);
+            return result;
         }
         catch
         {
@@ -458,8 +534,7 @@ public sealed class TimetableGenerationService
                 .SingleOrDefaultAsync(
                     x =>
                         x.TenantId == tenantId &&
-                        x.AcademicTermId ==
-                            academicTermId,
+                        x.AcademicTermId == academicTermId && x.IsActive,
                     cancellationToken);
 
         if (timetable is null)
@@ -497,6 +572,9 @@ public sealed class TimetableGenerationService
                     x.StaffMemberId)
                 .Distinct()
                 .ToList();
+
+        var parallelGroupIds = rawEntries.Where(x => x.ParallelSubjectGroupId.HasValue).Select(x => x.ParallelSubjectGroupId!.Value).Distinct().ToArray();
+        var parallelNames = await _database.ParallelSubjectGroups.AsNoTracking().Where(x => x.TenantId == tenantId && parallelGroupIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.DisplayName, cancellationToken);
 
         var classes =
             await _database.ClassGroups
@@ -598,7 +676,10 @@ public sealed class TimetableGenerationService
                         x.DayOfWeek,
                         x.PeriodNumber,
                         x.StartTime,
-                        x.EndTime);
+                        x.EndTime,
+                        x.ParallelSubjectGroupId,
+                        x.ParallelOccurrenceId,
+                        x.ParallelSubjectGroupId.HasValue && parallelNames.TryGetValue(x.ParallelSubjectGroupId.Value, out var parallelName) ? parallelName : null);
                 })
                 .ToList();
 
@@ -607,6 +688,8 @@ public sealed class TimetableGenerationService
             timetable.AcademicSessionId,
             timetable.AcademicTermId,
             timetable.GeneratedAtUtc,
+            timetable.VersionNumber,
+            timetable.IsActive,
             entries.Count,
             entries);
     }
@@ -631,14 +714,15 @@ public sealed class TimetableGenerationService
             throw new InvalidOperationException("The selected academic term was not found in the current academic session.");
 
         await using var transaction = await _database.Database.BeginTransactionAsync(cancellationToken);
+        await LockTimetableScopeAsync(tenantId, sessionId, academicTermId, cancellationToken);
         try
         {
             var timetable = await _database.GeneratedTimetables.SingleOrDefaultAsync(x =>
-                x.TenantId == tenantId && x.AcademicSessionId == sessionId && x.AcademicTermId == academicTermId,
+                x.TenantId == tenantId && x.AcademicSessionId == sessionId && x.AcademicTermId == academicTermId && x.IsActive,
                 cancellationToken);
             if (timetable is not null)
             {
-                _database.GeneratedTimetables.Remove(timetable);
+                timetable.MarkHistorical();
                 await _database.SaveChangesAsync(cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);
@@ -648,6 +732,26 @@ public sealed class TimetableGenerationService
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    private Task LockTimetableScopeAsync(Guid tenantId, Guid sessionId, Guid termId, CancellationToken cancellationToken)
+    {
+        if (!_database.Database.IsNpgsql()) return Task.CompletedTask;
+        // A transaction-scoped lock also serializes an empty scope (no active row yet).
+        // Acquire it before reading entries for class regeneration so fixed classes are current.
+        var scope = $"timetable:{tenantId:N}:{sessionId:N}:{termId:N}";
+        return _database.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({scope}, 0))", cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<GeneratedTimetableVersionResult>> GetHistoryAsync(Guid academicTermId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _database.GeneratedTimetables.AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.AcademicTermId == academicTermId)
+            .OrderByDescending(x => x.VersionNumber)
+            .Select(x => new GeneratedTimetableVersionResult(x.Id, x.VersionNumber, x.IsActive, x.GeneratedAtUtc, x.SupersededAtUtc))
+            .ToListAsync(cancellationToken);
     }
 
     private static List<TeachingSlot> BuildSlots(
@@ -792,6 +896,46 @@ public sealed class TimetableGenerationService
                             availability)));
     }
 
+    private static DoubleCandidate? FindDouble(RequirementRecord requirement, IReadOnlyCollection<AssignmentRecord> assignments, IReadOnlyList<TeachingSlot> slots, ISet<string> classBusy, ISet<string> teacherBusy, IReadOnlyCollection<AvailabilityRecord> availability, IReadOnlyDictionary<string, int> subjectDayCount, IReadOnlyDictionary<Guid, int> teacherLoad)
+    {
+        DoubleCandidate? best = null;
+        foreach (var assignment in assignments)
+        foreach (var first in slots)
+        foreach (var second in slots)
+        {
+            if (!AreConsecutive(first, second) || classBusy.Contains(BusyKey(requirement.ClassGroupId, first)) || classBusy.Contains(BusyKey(requirement.ClassGroupId, second)) || teacherBusy.Contains(BusyKey(assignment.StaffMemberId, first)) || teacherBusy.Contains(BusyKey(assignment.StaffMemberId, second)) || !TeacherCanUseSlot(assignment, first, availability) || !TeacherCanUseSlot(assignment, second, availability)) continue;
+            var dayCount = subjectDayCount.GetValueOrDefault(SubjectDayKey(requirement, first));
+            var score = dayCount * 10000 + teacherLoad.GetValueOrDefault(assignment.StaffMemberId) * 10 + first.PeriodNumber;
+            if (best is null || score < best.Score) best = new DoubleCandidate(assignment, first, second, score);
+        }
+        return best;
+    }
+
+    private static DoubleCandidate? FindParallelDouble(IReadOnlyList<(RequirementRecord Requirement, AssignmentRecord Assignment)> members, Guid groupId, IReadOnlyList<TeachingSlot> slots, ISet<string> classBusy, ISet<string> teacherBusy, IReadOnlyCollection<AvailabilityRecord> availability, IReadOnlyDictionary<string, int> parallelDayCount)
+    {
+        DoubleCandidate? best = null;
+        var classGroupId = members[0].Requirement.ClassGroupId;
+        foreach (var first in slots)
+        foreach (var second in slots)
+        {
+            if (!AreConsecutive(first, second) || classBusy.Contains(BusyKey(classGroupId, first)) || classBusy.Contains(BusyKey(classGroupId, second))) continue;
+            if (members.Any(member => !TeacherCanUseSlot(member.Assignment, first, availability) || !TeacherCanUseSlot(member.Assignment, second, availability) || teacherBusy.Contains(BusyKey(member.Assignment.StaffMemberId, first)) || teacherBusy.Contains(BusyKey(member.Assignment.StaffMemberId, second)))) continue;
+            var score = parallelDayCount.GetValueOrDefault($"{groupId:N}|{(int)first.DayOfWeek}") * 10000 + first.PeriodNumber;
+            if (best is null || score < best.Score) best = new DoubleCandidate(members[0].Assignment, first, second, score);
+        }
+        return best;
+    }
+
+    private static bool AreConsecutive(TeachingSlot first, TeachingSlot second) => first.DayOfWeek == second.DayOfWeek && first.EndTime == second.StartTime && second.PeriodNumber == first.PeriodNumber + 1;
+
+    private static bool HasAdjacentSubjectEntry(IReadOnlyCollection<PlannedEntry> planned, RequirementRecord requirement, TeachingSlot slot) =>
+        planned.Any(x => x.Requirement.ClassGroupId == requirement.ClassGroupId && x.Requirement.SubjectId == requirement.SubjectId && (AreConsecutive(x.Slot, slot) || AreConsecutive(slot, x.Slot)));
+
+    private static bool HasAdjacentParallelEntry(IReadOnlyCollection<PlannedEntry> planned, Guid groupId, TeachingSlot slot) =>
+        planned.Any(x => x.ParallelSubjectGroupId == groupId && (AreConsecutive(x.Slot, slot) || AreConsecutive(slot, x.Slot)));
+
+    private static string SubjectDayKey(RequirementRecord requirement, TeachingSlot slot) => $"{requirement.ClassGroupId:N}|{requirement.SubjectId:N}|{(int)slot.DayOfWeek}";
+
     private static string BusyKey(
         Guid entityId,
         TeachingSlot slot)
@@ -847,8 +991,16 @@ public sealed class TimetableGenerationService
         TeachingSlot Slot,
         int Score);
 
+    private sealed record DoubleCandidate(
+        AssignmentRecord Assignment,
+        TeachingSlot First,
+        TeachingSlot Second,
+        int Score);
+
     private sealed record PlannedEntry(
         RequirementRecord Requirement,
         AssignmentRecord Assignment,
-        TeachingSlot Slot);
+        TeachingSlot Slot,
+        Guid? ParallelSubjectGroupId = null,
+        Guid? ParallelOccurrenceId = null);
 }
