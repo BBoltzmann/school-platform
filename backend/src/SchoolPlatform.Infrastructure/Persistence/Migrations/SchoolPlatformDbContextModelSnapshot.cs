@@ -2160,6 +2160,11 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("AcademicTermId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("ActivatedAtUtc").HasColumnType("timestamp with time zone");
+                    b.Property<bool>("IsActive").HasColumnType("boolean");
+                    b.Property<DateTime?>("SupersededAtUtc").HasColumnType("timestamp with time zone");
+                    b.Property<int>("VersionNumber").HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -2176,8 +2181,10 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "AcademicSessionId");
 
-                    b.HasIndex("TenantId", "AcademicTermId")
+                    b.HasIndex("TenantId", "AcademicSessionId", "AcademicTermId")
+                        .HasFilter("\"IsActive\" = true")
                         .IsUnique();
+                    b.HasIndex("TenantId", "AcademicSessionId", "AcademicTermId", "VersionNumber").IsUnique();
 
                     b.ToTable("generated_timetables", (string)null);
                 });

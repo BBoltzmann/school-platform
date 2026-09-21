@@ -93,6 +93,12 @@ public sealed class TimetableGenerationService
                 "The selected academic term was not found in the current academic session.");
         }
 
+        var activeTimetable = request.ClassGroupId.HasValue
+            ? await _database.GeneratedTimetables.AsNoTracking().Include(x => x.Entries).SingleOrDefaultAsync(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.AcademicTermId == request.AcademicTermId && x.IsActive, cancellationToken)
+            : null;
+        if (request.ClassGroupId.HasValue && activeTimetable is null)
+            throw new InvalidOperationException("An active timetable is required before regenerating one class.");
+
         var settings =
             await _database.TimetableSettings
                 .AsNoTracking()
@@ -135,6 +141,8 @@ public sealed class TimetableGenerationService
                     x.PeriodsPerWeek))
                 .ToListAsync(
                     cancellationToken);
+        if (request.ClassGroupId.HasValue)
+            requirements = requirements.Where(x => x.ClassGroupId == request.ClassGroupId.Value).ToList();
 
         var assignments =
             await _database.TeachingAssignments
@@ -178,7 +186,7 @@ public sealed class TimetableGenerationService
 
         var configuredGroups = await _database.ParallelSubjectGroups
             .AsNoTracking()
-            .Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.IsActive)
+            .Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.IsActive && (!request.ClassGroupId.HasValue || x.ClassGroupId == request.ClassGroupId.Value))
             .Select(x => new { x.Id, x.ClassGroupId, x.DisplayName, Members = x.Members.Select(m => m.ClassSubject.SubjectId).ToList() })
             .ToListAsync(cancellationToken);
         var groupedSubjects = configuredGroups.SelectMany(x => x.Members.Select(subjectId => (x.ClassGroupId, subjectId))).ToHashSet();
@@ -213,6 +221,16 @@ public sealed class TimetableGenerationService
 
         var planned =
             new List<PlannedEntry>();
+
+        if (activeTimetable is not null)
+        {
+            foreach (var fixedEntry in activeTimetable.Entries.Where(x => x.ClassGroupId != request.ClassGroupId))
+            {
+                var slot = new TeachingSlot(fixedEntry.DayOfWeek, fixedEntry.PeriodNumber, fixedEntry.StartTime, fixedEntry.EndTime);
+                classBusy.Add(BusyKey(fixedEntry.ClassGroupId, slot));
+                teacherBusy.Add(BusyKey(fixedEntry.StaffMemberId, slot));
+            }
+        }
 
         foreach (var group in configuredGroups)
         {
@@ -411,40 +429,19 @@ public sealed class TimetableGenerationService
 
         try
         {
-            var timetable =
-                await _database.GeneratedTimetables
-                    .Include(x => x.Entries)
-                    .SingleOrDefaultAsync(
-                        x =>
-                            x.TenantId == tenantId &&
-                            x.AcademicTermId ==
-                                request.AcademicTermId,
-                        cancellationToken);
+            var previous = await _database.GeneratedTimetables.Include(x => x.Entries)
+                .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.AcademicTermId == request.AcademicTermId && x.IsActive, cancellationToken);
+            var nextVersion = (await _database.GeneratedTimetables.Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.AcademicTermId == request.AcademicTermId).Select(x => (int?)x.VersionNumber).MaxAsync(cancellationToken) ?? 0) + 1;
+            var timetable = new GeneratedTimetable(tenantId, session.Id, request.AcademicTermId);
+            timetable.SetVersion(nextVersion);
+            _database.GeneratedTimetables.Add(timetable);
+            if (previous is not null) previous.MarkHistorical();
+            await _database.SaveChangesAsync(cancellationToken);
 
-            if (timetable is null)
+            if (request.ClassGroupId.HasValue && previous is not null)
             {
-                timetable =
-                    new GeneratedTimetable(
-                        tenantId,
-                        session.Id,
-                        request.AcademicTermId);
-
-                _database.GeneratedTimetables.Add(
-                    timetable);
-
-                await _database.SaveChangesAsync(
-                    cancellationToken);
-            }
-            else
-            {
-                _database.GeneratedTimetableEntries
-                    .RemoveRange(
-                        timetable.Entries);
-
-                timetable.MarkRegenerated();
-
-                await _database.SaveChangesAsync(
-                    cancellationToken);
+                foreach (var fixedEntry in previous.Entries.Where(x => x.ClassGroupId != request.ClassGroupId))
+                    _database.GeneratedTimetableEntries.Add(new GeneratedTimetableEntry(tenantId, timetable.Id, fixedEntry.ClassGroupId, fixedEntry.SubjectId, fixedEntry.StaffMemberId, fixedEntry.DayOfWeek, fixedEntry.PeriodNumber, fixedEntry.StartTime, fixedEntry.EndTime, fixedEntry.ParallelSubjectGroupId, fixedEntry.ParallelOccurrenceId));
             }
 
             foreach (
@@ -500,8 +497,7 @@ public sealed class TimetableGenerationService
                 .SingleOrDefaultAsync(
                     x =>
                         x.TenantId == tenantId &&
-                        x.AcademicTermId ==
-                            academicTermId,
+                        x.AcademicTermId == academicTermId && x.IsActive,
                     cancellationToken);
 
         if (timetable is null)
@@ -655,6 +651,8 @@ public sealed class TimetableGenerationService
             timetable.AcademicSessionId,
             timetable.AcademicTermId,
             timetable.GeneratedAtUtc,
+            timetable.VersionNumber,
+            timetable.IsActive,
             entries.Count,
             entries);
     }
@@ -682,11 +680,11 @@ public sealed class TimetableGenerationService
         try
         {
             var timetable = await _database.GeneratedTimetables.SingleOrDefaultAsync(x =>
-                x.TenantId == tenantId && x.AcademicSessionId == sessionId && x.AcademicTermId == academicTermId,
+                x.TenantId == tenantId && x.AcademicSessionId == sessionId && x.AcademicTermId == academicTermId && x.IsActive,
                 cancellationToken);
             if (timetable is not null)
             {
-                _database.GeneratedTimetables.Remove(timetable);
+                timetable.MarkHistorical();
                 await _database.SaveChangesAsync(cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);
@@ -696,6 +694,16 @@ public sealed class TimetableGenerationService
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    public async Task<IReadOnlyCollection<GeneratedTimetableVersionResult>> GetHistoryAsync(Guid academicTermId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _database.GeneratedTimetables.AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.AcademicTermId == academicTermId)
+            .OrderByDescending(x => x.VersionNumber)
+            .Select(x => new GeneratedTimetableVersionResult(x.Id, x.VersionNumber, x.IsActive, x.GeneratedAtUtc, x.SupersededAtUtc))
+            .ToListAsync(cancellationToken);
     }
 
     private static List<TeachingSlot> BuildSlots(

@@ -64,6 +64,7 @@ export function TimetableMvpPanel({
     setGenerating,
   ] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [history, setHistory] = useState<{ versionNumber: number; isActive: boolean; generatedAtUtc: string }[]>([]);
 
   const [
     generationError,
@@ -98,6 +99,8 @@ export function TimetableMvpPanel({
       setGenerationError(null);
 
       try {
+        const historyResponse = await fetch(`/api/timetable/generated/${selectedTermId}/history`);
+        if (historyResponse.ok && !cancelled) setHistory(await historyResponse.json());
         const response =
           await fetch(
             `/api/timetable/generated/${selectedTermId}`
@@ -292,9 +295,22 @@ export function TimetableMvpPanel({
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error ?? "Unable to reset generated timetable.");
       setTimetable(null);
+      setHistory([]);
     } catch (exception) {
       setGenerationError(exception instanceof Error ? exception.message : "Unable to reset generated timetable.");
     } finally { setResetting(false); }
+  }
+
+  async function regenerateClass() {
+    if (!selectedTermId || !selectedClassId || !window.confirm("Regenerate this class? Other classes will remain fixed and teacher conflicts will still be enforced.")) return;
+    setGenerating(true); setGenerationError(null);
+    try {
+      const response = await fetch(`/api/timetable/classes/${selectedClassId}/generate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ academicTermId: selectedTermId }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to regenerate this class.");
+      setTimetable(result);
+    } catch (exception) { setGenerationError(exception instanceof Error ? exception.message : "Unable to regenerate this class."); }
+    finally { setGenerating(false); }
   }
 
   return (
@@ -364,6 +380,8 @@ export function TimetableMvpPanel({
             }
           />
         </div>
+
+        {history.length > 0 && <div className="rounded-lg border px-4 py-3 text-sm"><div className="font-semibold">Timetable versions</div><div className="mt-2 flex flex-wrap gap-2">{history.map(version => <span key={version.versionNumber} className={version.isActive ? "rounded-full bg-green-50 px-2.5 py-1 text-green-700" : "rounded-full bg-muted px-2.5 py-1 text-muted-foreground"}>Version {version.versionNumber} · {version.isActive ? "Active" : "Historical"}</span>)}</div></div>}
 
         {readiness.issues.length >
         0 ? (
@@ -468,6 +486,7 @@ export function TimetableMvpPanel({
               : "Generate Timetable"}
           </Button>
           {timetable && <Button type="button" variant="outline" onClick={() => void resetGenerated()} disabled={resetting || generating}>{resetting ? "Resetting…" : "Reset Generated Timetable"}</Button>}
+          {timetable && viewMode === "class" && selectedClassId && <Button type="button" variant="outline" onClick={() => void regenerateClass()} disabled={generating || resetting}>Regenerate This Class</Button>}
         </div>
 
         {generationError && (

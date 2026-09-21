@@ -14,12 +14,10 @@ public sealed class GeneratedTimetableConfiguration
 
         builder.HasKey(x => x.Id);
 
-        builder.HasIndex(x => new
-        {
-            x.TenantId,
-            x.AcademicTermId
-        })
-        .IsUnique();
+        builder.HasIndex(x => new { x.TenantId, x.AcademicSessionId, x.AcademicTermId })
+            .HasFilter("\"IsActive\" = true")
+            .IsUnique();
+        builder.HasIndex(x => new { x.TenantId, x.AcademicSessionId, x.AcademicTermId, x.VersionNumber }).IsUnique();
 
         builder.HasIndex(x => new
         {

@@ -1,15 +1,20 @@
 namespace SchoolPlatform.Application.Timetabling;
 
 public sealed record GenerateTimetableRequest(
-    Guid AcademicTermId);
+    Guid AcademicTermId,
+    Guid? ClassGroupId = null);
 
 public sealed record GeneratedTimetableResult(
     Guid Id,
     Guid AcademicSessionId,
     Guid AcademicTermId,
     DateTime GeneratedAtUtc,
+    int VersionNumber,
+    bool IsActive,
     int EntryCount,
     IReadOnlyCollection<GeneratedTimetableEntryResult> Entries);
+
+public sealed record GeneratedTimetableVersionResult(Guid Id, int VersionNumber, bool IsActive, DateTime GeneratedAtUtc, DateTime? SupersededAtUtc);
 
 public sealed record GeneratedTimetableEntryResult(
     Guid Id,

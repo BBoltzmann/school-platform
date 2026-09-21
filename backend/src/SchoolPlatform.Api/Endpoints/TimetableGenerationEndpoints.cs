@@ -41,6 +41,13 @@ public static class TimetableGenerationEndpoints
             })
             .RequireAuthorization();
 
+        app.MapPost("/api/timetable/classes/{classGroupId:guid}/generate", async (Guid classGroupId, GenerateTimetableRequest request, ITimetableGenerationService generator, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
+        {
+            if (!currentUser.HasPermission("students.update")) return Results.Forbid();
+            try { return Results.Ok(await generator.GenerateAsync(request with { ClassGroupId = classGroupId }, cancellationToken)); }
+            catch (InvalidOperationException exception) { return Results.BadRequest(new { error = exception.Message }); }
+        }).RequireAuthorization();
+
         app.MapGet(
             "/api/timetable/generated/{academicTermId:guid}",
             async (
@@ -65,6 +72,12 @@ public static class TimetableGenerationEndpoints
                     : Results.Ok(result);
             })
             .RequireAuthorization();
+
+        app.MapGet("/api/timetable/generated/{academicTermId:guid}/history", async (Guid academicTermId, ITimetableGenerationService generator, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
+        {
+            if (!currentUser.HasPermission("students.read")) return Results.Forbid();
+            return Results.Ok(await generator.GetHistoryAsync(academicTermId, cancellationToken));
+        }).RequireAuthorization();
 
         app.MapPost(
             "/api/timetable/generated/{academicTermId:guid}/reset",

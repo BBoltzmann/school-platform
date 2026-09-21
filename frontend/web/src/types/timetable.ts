@@ -139,6 +139,8 @@ export type GeneratedTimetable = {
   academicSessionId: string;
   academicTermId: string;
   generatedAtUtc: string;
+  versionNumber: number;
+  isActive: boolean;
   entryCount: number;
   entries: GeneratedTimetableEntry[];
 };
