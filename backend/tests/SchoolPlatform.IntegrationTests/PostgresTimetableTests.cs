@@ -65,6 +65,34 @@ public sealed class PostgresTimetableTests
     [PostgresTimetableFact] public Task ThreeMemberParallelGeneration() => AssertParallel(3);
 
     [PostgresTimetableFact]
+    public async Task RegenerationKeepsOneEntryPerParallelMember()
+    {
+        await AssertRegenerationKeepsOneEntryPerParallelMember(2);
+        await AssertRegenerationKeepsOneEntryPerParallelMember(3);
+    }
+
+    private static async Task AssertRegenerationKeepsOneEntryPerParallelMember(int members)
+    {
+        await using var fixture = new PostgresTimetableFixture();
+        await fixture.InitializeAsync(members);
+        await fixture.GenerateAsync();
+        var active = await fixture.GenerateAsync();
+
+        Assert.Equal(2, active.VersionNumber);
+        Assert.All(active.Entries.Where(x => x.ClassGroupId == fixture.ClassId).GroupBy(x => x.ParallelOccurrenceId), occurrence =>
+        {
+            var identities = occurrence.Select(x => (x.SubjectId, x.StaffMemberId)).ToList();
+            Assert.Equal(members, identities.Count);
+            Assert.Equal(members, identities.Distinct().Count());
+        });
+
+        await using var db = fixture.Open();
+        var history = await fixture.Service(db).GetHistoryAsync(fixture.TermId);
+        Assert.Equal(2, history.Count);
+        Assert.Single(history.Where(x => x.IsActive));
+    }
+
+    [PostgresTimetableFact]
     public async Task ActiveTimetableReadIsTenantScoped()
     {
         await using var fixture = new PostgresTimetableFixture();

@@ -35,4 +35,6 @@ test("parallel member rows use stable subject and teacher identifiers for React 
   const panel = fs.readFileSync(new URL("components/timetable/timetable-mvp-panel.tsx", root), "utf8");
   assert.match(panel, /\$\{entry\.id\}-\$\{member\.subjectId\}-\$\{member\.staffMemberId\}/);
   assert.match(panel, /subjectId: entry\.subjectId, staffMemberId: entry\.staffMemberId/);
+  assert.match(panel, /membersByOccurrence/);
+  assert.match(panel, /if \(!memberKeys\.has\(memberKey\)\)/);
 });

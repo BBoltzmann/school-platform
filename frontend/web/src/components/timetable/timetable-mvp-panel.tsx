@@ -948,12 +948,22 @@ function groupByDay(
 function groupEntries(entries: GeneratedTimetableEntry[]) {
   const result: GeneratedTimetableEntry[] = [];
   const byOccurrence = new Map<string, GeneratedTimetableEntry>();
+  const membersByOccurrence = new Map<string, Set<string>>();
   for (const entry of entries) {
     if (!entry.parallelOccurrenceId) { result.push(entry); continue; }
     const existing = byOccurrence.get(entry.parallelOccurrenceId);
-    if (existing) { existing.parallelMembers = [...(existing.parallelMembers ?? []), { subjectId: entry.subjectId, staffMemberId: entry.staffMemberId, subjectName: entry.subjectName, staffName: entry.staffName }]; continue; }
+    const memberKey = `${entry.subjectId}-${entry.staffMemberId}`;
+    if (existing) {
+      const memberKeys = membersByOccurrence.get(entry.parallelOccurrenceId)!;
+      if (!memberKeys.has(memberKey)) {
+        memberKeys.add(memberKey);
+        existing.parallelMembers = [...(existing.parallelMembers ?? []), { subjectId: entry.subjectId, staffMemberId: entry.staffMemberId, subjectName: entry.subjectName, staffName: entry.staffName }];
+      }
+      continue;
+    }
     const grouped = { ...entry, parallelMembers: [{ subjectId: entry.subjectId, staffMemberId: entry.staffMemberId, subjectName: entry.subjectName, staffName: entry.staffName }] };
     byOccurrence.set(entry.parallelOccurrenceId, grouped);
+    membersByOccurrence.set(entry.parallelOccurrenceId, new Set([memberKey]));
     result.push(grouped);
   }
   return result;
