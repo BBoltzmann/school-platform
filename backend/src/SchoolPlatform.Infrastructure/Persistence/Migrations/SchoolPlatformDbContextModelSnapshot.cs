@@ -1133,6 +1133,38 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.ToTable("teacher_portal_invitations", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+                    b.Property<Guid>("AcademicSessionId").HasColumnType("uuid");
+                    b.Property<Guid>("ClassGroupId").HasColumnType("uuid");
+                    b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+                    b.Property<string>("DisplayName").HasMaxLength(200).HasColumnType("character varying(200)");
+                    b.Property<bool>("IsActive").HasColumnType("boolean");
+                    b.Property<Guid>("TenantId").HasColumnType("uuid");
+                    b.Property<DateTime?>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+                    b.HasKey("Id");
+                    b.HasIndex("AcademicSessionId");
+                    b.HasIndex("ClassGroupId");
+                    b.HasIndex("TenantId", "AcademicSessionId", "ClassGroupId", "IsActive");
+                    b.ToTable("parallel_subject_groups", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroupMember", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+                    b.Property<Guid>("ClassSubjectId").HasColumnType("uuid");
+                    b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+                    b.Property<Guid>("ParallelSubjectGroupId").HasColumnType("uuid");
+                    b.Property<Guid>("TenantId").HasColumnType("uuid");
+                    b.Property<DateTime?>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+                    b.HasKey("Id");
+                    b.HasIndex("ClassSubjectId");
+                    b.HasIndex("ParallelSubjectGroupId", "ClassSubjectId").IsUnique();
+                    b.HasIndex("TenantId", "ClassSubjectId");
+                    b.ToTable("parallel_subject_group_members", (string)null);
+                });
+
             modelBuilder.Entity("SchoolPlatform.Domain.Identity.TenantMembership", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2204,6 +2236,30 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("generated_timetable_entries", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", b =>
+                {
+                    b.HasOne("SchoolPlatform.Domain.Academics.AcademicSession", "AcademicSession")
+                        .WithMany().HasForeignKey("AcademicSessionId")
+                        .OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.HasOne("SchoolPlatform.Domain.Academics.ClassGroup", "ClassGroup")
+                        .WithMany().HasForeignKey("ClassGroupId")
+                        .OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.Navigation("AcademicSession");
+                    b.Navigation("ClassGroup");
+                });
+
+            modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroupMember", b =>
+                {
+                    b.HasOne("SchoolPlatform.Domain.Academics.ClassSubject", "ClassSubject")
+                        .WithMany().HasForeignKey("ClassSubjectId")
+                        .OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.HasOne("SchoolPlatform.Domain.Timetabling.ParallelSubjectGroup", "ParallelSubjectGroup")
+                        .WithMany("Members").HasForeignKey("ParallelSubjectGroupId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired();
+                    b.Navigation("ClassSubject");
+                    b.Navigation("ParallelSubjectGroup");
                 });
 
             modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.TimetableDay", b =>

@@ -110,6 +110,12 @@ public sealed class SchoolPlatformDbContext : DbContext
     public DbSet<ClassSubjectRequirement> ClassSubjectRequirements
         => Set<ClassSubjectRequirement>();
 
+    public DbSet<ParallelSubjectGroup> ParallelSubjectGroups
+        => Set<ParallelSubjectGroup>();
+
+    public DbSet<ParallelSubjectGroupMember> ParallelSubjectGroupMembers
+        => Set<ParallelSubjectGroupMember>();
+
         public DbSet<GeneratedTimetable> GeneratedTimetables
         => Set<GeneratedTimetable>();
 
