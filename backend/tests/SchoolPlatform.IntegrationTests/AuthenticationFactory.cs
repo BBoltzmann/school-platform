@@ -44,6 +44,8 @@ public sealed class AuthenticationFactory(bool allowSignup = true, bool directRe
 {
     private readonly SqliteConnection connection = new("Data Source=:memory:");
     private readonly string? postgresSocket = Environment.GetEnvironmentVariable("SCHOOL_AUTH_TEST_POSTGRES_SOCKET");
+    private readonly string? postgresConnection = LocalPostgresConnection();
+    private bool postgresDatabaseCreated;
     private readonly string databaseName = "school_auth_test_" + Guid.NewGuid().ToString("N");
     public bool DirectResetEnabled { get; set; } = directResetEnabled;
     public string? DirectRecoveryCode { get; set; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -53,6 +55,16 @@ public sealed class AuthenticationFactory(bool allowSignup = true, bool directRe
     public const string OldPassword = "Original-password-123";
     public const string NewPassword = "Replacement-password-456";
     public const string AdminEmail = "admin@antiochcollege.local";
+
+    private static string? LocalPostgresConnection()
+    {
+        var value = Environment.GetEnvironmentVariable("SCHOOL_AUTH_TEST_POSTGRES_CONNECTION");
+        if (value is null) return null;
+        var parsed = new NpgsqlConnectionStringBuilder(value);
+        if (parsed.Host != "127.0.0.1" || parsed.Port != 5433)
+            throw new InvalidOperationException("TCP tests require local PostgreSQL at 127.0.0.1:5433.");
+        return value;
+    }
 
     protected override IHost CreateHost(IHostBuilder builder)
     {
@@ -76,18 +88,23 @@ public sealed class AuthenticationFactory(bool allowSignup = true, bool directRe
             services.RemoveAll<SchoolPlatformDbContext>();
             services.RemoveAll<DbContextOptions<SchoolPlatformDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<SchoolPlatformDbContext>>();
-            if (postgresSocket is null)
+            if (postgresSocket is null && postgresConnection is null)
             {
                 connection.Open();
                 services.AddDbContext<SchoolPlatformDbContext>(options => options.UseSqlite(connection));
             }
-            else
+            else if (postgresConnection is null && postgresSocket is not null)
             {
                 if (!postgresSocket.StartsWith("/private/tmp/school-platform-auth-", StringComparison.Ordinal))
                     throw new InvalidOperationException("Tests require an isolated temporary PostgreSQL socket.");
                 services.AddDbContext<SchoolPlatformDbContext>(options => options.UseNpgsql(
                     new NpgsqlConnectionStringBuilder { Host = postgresSocket, Database = databaseName,
                         Username = "school_auth_test", Pooling = false }.ConnectionString).AddInterceptors(ResetBarrier));
+            }
+            else
+            {
+                var postgresBuilder = new NpgsqlConnectionStringBuilder(postgresConnection) { Database = databaseName, Pooling = false };
+                services.AddDbContext<SchoolPlatformDbContext>(options => options.UseNpgsql(postgresBuilder.ConnectionString).AddInterceptors(ResetBarrier));
             }
             services.RemoveAll<ITemporaryPasswordResetAccess>();
             services.AddSingleton<ITemporaryPasswordResetAccess>(new TemporaryPasswordResetAccess(name => name switch
@@ -108,10 +125,19 @@ public sealed class AuthenticationFactory(bool allowSignup = true, bool directRe
 
     public async Task<HttpClient> InitializeAsync(bool seed = true)
     {
+        if (postgresConnection is not null)
+        {
+            var adminBuilder = new NpgsqlConnectionStringBuilder(postgresConnection) { Database = "postgres", Pooling = false };
+            await using var admin = new NpgsqlConnection(adminBuilder.ConnectionString);
+            await admin.OpenAsync();
+            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", admin);
+            await create.ExecuteNonQueryAsync();
+            postgresDatabaseCreated = true;
+        }
         var client = CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
         using var scope = Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
-        if (postgresSocket is null) await database.Database.EnsureCreatedAsync();
+        if (postgresSocket is null && postgresConnection is null) await database.Database.EnsureCreatedAsync();
         else await database.Database.MigrateAsync();
         if (seed) await scope.ServiceProvider.GetRequiredService<ISchoolBootstrapService>().BootstrapAsync(
             new BootstrapSchoolRequest("Antioch Royal College", "antioch-college", "Primary campus", AdminEmail, "School", "Admin", OldPassword));
@@ -127,13 +153,20 @@ public sealed class AuthenticationFactory(bool allowSignup = true, bool directRe
         if (disposing)
         {
             connection.Dispose();
-            if (postgresSocket is not null && postgresSocket.StartsWith("/private/tmp/school-platform-auth-", StringComparison.Ordinal))
+            if (postgresConnection is null && postgresSocket is not null && postgresSocket.StartsWith("/private/tmp/school-platform-auth-", StringComparison.Ordinal))
             {
                 using var admin = new NpgsqlConnection(new NpgsqlConnectionStringBuilder {
                     Host = postgresSocket, Database = "postgres", Username = "school_auth_test", Pooling = false }.ConnectionString);
                 admin.Open();
                 // databaseName is generated internally and cannot contain SQL metacharacters.
                 using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS {databaseName} WITH (FORCE)", admin);
+                command.ExecuteNonQuery();
+            }
+            if (postgresDatabaseCreated)
+            {
+                using var admin = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(postgresConnection) { Database = "postgres", Pooling = false }.ConnectionString);
+                admin.Open();
+                using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", admin);
                 command.ExecuteNonQuery();
             }
         }

@@ -93,6 +93,9 @@ public sealed class TimetableGenerationService
                 "The selected academic term was not found in the current academic session.");
         }
 
+        await using var transaction = await _database.Database.BeginTransactionAsync(cancellationToken);
+        await LockTimetableScopeAsync(tenantId, session.Id, request.AcademicTermId, cancellationToken);
+
         var activeTimetable = request.ClassGroupId.HasValue
             ? await _database.GeneratedTimetables.AsNoTracking().Include(x => x.Entries).SingleOrDefaultAsync(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.AcademicTermId == request.AcademicTermId && x.IsActive, cancellationToken)
             : null;
@@ -422,11 +425,6 @@ public sealed class TimetableGenerationService
             }
         }
 
-        await using var transaction =
-            await _database.Database
-                .BeginTransactionAsync(
-                    cancellationToken);
-
         try
         {
             var previous = await _database.GeneratedTimetables.Include(x => x.Entries)
@@ -434,8 +432,13 @@ public sealed class TimetableGenerationService
             var nextVersion = (await _database.GeneratedTimetables.Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.AcademicTermId == request.AcademicTermId).Select(x => (int?)x.VersionNumber).MaxAsync(cancellationToken) ?? 0) + 1;
             var timetable = new GeneratedTimetable(tenantId, session.Id, request.AcademicTermId);
             timetable.SetVersion(nextVersion);
+            // Release the filtered unique active-version key before inserting its replacement.
+            if (previous is not null)
+            {
+                previous.MarkHistorical();
+                await _database.SaveChangesAsync(cancellationToken);
+            }
             _database.GeneratedTimetables.Add(timetable);
-            if (previous is not null) previous.MarkHistorical();
             await _database.SaveChangesAsync(cancellationToken);
 
             if (request.ClassGroupId.HasValue && previous is not null)
@@ -466,14 +469,12 @@ public sealed class TimetableGenerationService
             await _database.SaveChangesAsync(
                 cancellationToken);
 
-            await transaction.CommitAsync(
-                cancellationToken);
-
-            return await GetAsync(
-                       request.AcademicTermId,
-                       cancellationToken)
-                   ?? throw new InvalidOperationException(
-                       "Generated timetable could not be loaded.");
+            // Read our own result while holding the scope lock; a later regeneration must
+            // not replace the version returned to this caller after commit.
+            var result = await GetAsync(request.AcademicTermId, cancellationToken)
+                ?? throw new InvalidOperationException("Generated timetable could not be loaded.");
+            await transaction.CommitAsync(cancellationToken);
+            return result;
         }
         catch
         {
@@ -677,6 +678,7 @@ public sealed class TimetableGenerationService
             throw new InvalidOperationException("The selected academic term was not found in the current academic session.");
 
         await using var transaction = await _database.Database.BeginTransactionAsync(cancellationToken);
+        await LockTimetableScopeAsync(tenantId, sessionId, academicTermId, cancellationToken);
         try
         {
             var timetable = await _database.GeneratedTimetables.SingleOrDefaultAsync(x =>
@@ -694,6 +696,16 @@ public sealed class TimetableGenerationService
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    private Task LockTimetableScopeAsync(Guid tenantId, Guid sessionId, Guid termId, CancellationToken cancellationToken)
+    {
+        if (!_database.Database.IsNpgsql()) return Task.CompletedTask;
+        // A transaction-scoped lock also serializes an empty scope (no active row yet).
+        // Acquire it before reading entries for class regeneration so fixed classes are current.
+        var scope = $"timetable:{tenantId:N}:{sessionId:N}:{termId:N}";
+        return _database.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({scope}, 0))", cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<GeneratedTimetableVersionResult>> GetHistoryAsync(Guid academicTermId, CancellationToken cancellationToken = default)

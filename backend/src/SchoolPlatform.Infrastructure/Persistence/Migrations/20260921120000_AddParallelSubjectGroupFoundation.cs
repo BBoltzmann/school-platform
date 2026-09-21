@@ -48,14 +48,15 @@ public partial class AddParallelSubjectGroupFoundation : Migration
             {
                 table.PrimaryKey("PK_parallel_subject_group_members", x => x.Id);
                 table.ForeignKey("FK_parallel_subject_group_members_class_subjects_ClassSubjectId", x => x.ClassSubjectId, "class_subjects", "Id", onDelete: ReferentialAction.Restrict);
-                table.ForeignKey("FK_parallel_subject_group_members_parallel_subject_groups_ParallelSubjectGroupId", x => x.ParallelSubjectGroupId, "parallel_subject_groups", "Id", onDelete: ReferentialAction.Cascade);
+                table.ForeignKey("FK_parallel_subject_group_members_parallel_subject_groups_Para~", x => x.ParallelSubjectGroupId, "parallel_subject_groups", "Id", onDelete: ReferentialAction.Cascade);
             });
 
         migrationBuilder.CreateIndex(name: "IX_parallel_subject_groups_AcademicSessionId", table: "parallel_subject_groups", column: "AcademicSessionId");
         migrationBuilder.CreateIndex(name: "IX_parallel_subject_groups_ClassGroupId", table: "parallel_subject_groups", column: "ClassGroupId");
-        migrationBuilder.CreateIndex(name: "IX_parallel_subject_groups_TenantId_AcademicSessionId_ClassGroupId_IsActive", table: "parallel_subject_groups", columns: new[] { "TenantId", "AcademicSessionId", "ClassGroupId", "IsActive" });
+        migrationBuilder.CreateIndex(name: "IX_parallel_subject_groups_TenantId_AcademicSessionId_ClassGro~", table: "parallel_subject_groups", columns: new[] { "TenantId", "AcademicSessionId", "ClassGroupId", "IsActive" });
+        migrationBuilder.CreateIndex(name: "IX_parallel_subject_group_members_ParallelSubjectGroupId", table: "parallel_subject_group_members", column: "ParallelSubjectGroupId");
         migrationBuilder.CreateIndex(name: "IX_parallel_subject_group_members_ClassSubjectId", table: "parallel_subject_group_members", column: "ClassSubjectId");
-        migrationBuilder.CreateIndex(name: "IX_parallel_subject_group_members_ParallelSubjectGroupId_ClassSubjectId", table: "parallel_subject_group_members", columns: new[] { "ParallelSubjectGroupId", "ClassSubjectId" }, unique: true);
+        migrationBuilder.CreateIndex(name: "IX_parallel_subject_group_members_TenantId_ParallelSubjectGrou~", table: "parallel_subject_group_members", columns: new[] { "TenantId", "ParallelSubjectGroupId", "ClassSubjectId" }, unique: true);
         migrationBuilder.CreateIndex(name: "IX_parallel_subject_group_members_TenantId_ClassSubjectId", table: "parallel_subject_group_members", columns: new[] { "TenantId", "ClassSubjectId" });
     }
 

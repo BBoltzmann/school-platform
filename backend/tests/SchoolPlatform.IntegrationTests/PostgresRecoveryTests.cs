@@ -15,8 +15,8 @@ public sealed class PostgresFactAttribute : FactAttribute
 {
     public PostgresFactAttribute()
     {
-        if (Environment.GetEnvironmentVariable("SCHOOL_AUTH_TEST_POSTGRES_SOCKET") is null)
-            Skip = "Run with an isolated local PostgreSQL socket to verify PostgreSQL transaction semantics.";
+        if (Environment.GetEnvironmentVariable("SCHOOL_AUTH_TEST_POSTGRES_SOCKET") is null && Environment.GetEnvironmentVariable("SCHOOL_AUTH_TEST_POSTGRES_CONNECTION") is null)
+            Skip = "Set SCHOOL_AUTH_TEST_POSTGRES_CONNECTION to an isolated local PostgreSQL TCP connection.";
     }
 }
 
