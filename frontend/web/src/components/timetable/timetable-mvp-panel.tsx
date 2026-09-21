@@ -848,7 +848,7 @@ function GeneratedTimetableViewer({
                               {entry.parallelDisplayName || entry.subjectName}
                             </div>
 
-                            {entry.parallelMembers?.map(member => <div key={`${entry.id}-${member.subjectName}`} className="text-xs text-muted-foreground">{member.subjectName} — {member.staffName}</div>)}
+                            {entry.parallelMembers?.map(member => <div key={`${entry.id}-${member.subjectId}-${member.staffMemberId}`} className="text-xs text-muted-foreground">{member.subjectName} — {member.staffName}</div>)}
 
                             <div className="mt-1 text-xs text-muted-foreground">
                               {viewMode ===
@@ -951,8 +951,8 @@ function groupEntries(entries: GeneratedTimetableEntry[]) {
   for (const entry of entries) {
     if (!entry.parallelOccurrenceId) { result.push(entry); continue; }
     const existing = byOccurrence.get(entry.parallelOccurrenceId);
-    if (existing) { existing.parallelMembers = [...(existing.parallelMembers ?? []), { subjectName: entry.subjectName, staffName: entry.staffName }]; continue; }
-    const grouped = { ...entry, parallelMembers: [{ subjectName: entry.subjectName, staffName: entry.staffName }] };
+    if (existing) { existing.parallelMembers = [...(existing.parallelMembers ?? []), { subjectId: entry.subjectId, staffMemberId: entry.staffMemberId, subjectName: entry.subjectName, staffName: entry.staffName }]; continue; }
+    const grouped = { ...entry, parallelMembers: [{ subjectId: entry.subjectId, staffMemberId: entry.staffMemberId, subjectName: entry.subjectName, staffName: entry.staffName }] };
     byOccurrence.set(entry.parallelOccurrenceId, grouped);
     result.push(grouped);
   }

@@ -30,3 +30,9 @@ test("active timetable has master, class, teacher, and teacher portal exports", 
   assert.match(read("types/session.ts"), /tenantName/);
   assert.match(read("app/app/[tenantSlug]/layout.tsx"), /session\.tenantName/);
 });
+
+test("parallel member rows use stable subject and teacher identifiers for React keys", () => {
+  const panel = fs.readFileSync(new URL("components/timetable/timetable-mvp-panel.tsx", root), "utf8");
+  assert.match(panel, /\$\{entry\.id\}-\$\{member\.subjectId\}-\$\{member\.staffMemberId\}/);
+  assert.match(panel, /subjectId: entry\.subjectId, staffMemberId: entry\.staffMemberId/);
+});
