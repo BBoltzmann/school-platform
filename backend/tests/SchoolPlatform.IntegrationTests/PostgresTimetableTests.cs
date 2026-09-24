@@ -49,6 +49,38 @@ public sealed class PostgresTimetableTests
         Assert.Empty(await service.ListAsync(fixture.ClassId, fixture.SessionId));
         Assert.Equal(offerings, await db.ClassSubjects.CountAsync(x => x.ClassGroupId == fixture.ClassId));
     }
+
+    [PostgresTimetableFact]
+    public async Task ResetDeactivatesGroupsUsedByHistoryWithoutChangingHistoricalRelationships()
+    {
+        await using var fixture = new PostgresTimetableFixture();
+        await fixture.InitializeAsync(members: 2);
+        await using var db = fixture.Open();
+        var timetable = new GeneratedTimetable(fixture.TenantId, fixture.SessionId, fixture.TermId);
+        db.Add(timetable);
+        db.Add(new GeneratedTimetableEntry(
+            fixture.TenantId,
+            timetable.Id,
+            fixture.ClassId,
+            fixture.SubjectIds[0],
+            fixture.TeacherIds[0],
+            DayOfWeek.Monday,
+            1,
+            new(8, 0),
+            new(8, 40),
+            fixture.GroupId,
+            Guid.NewGuid()));
+        await db.SaveChangesAsync();
+
+        var service = new SchoolPlatform.Infrastructure.Academics.ParallelSubjectGroupService(db, fixture);
+        await service.ResetAsync(fixture.ClassId, fixture.SessionId);
+
+        Assert.Empty(await service.ListAsync(fixture.ClassId, fixture.SessionId));
+        var historicalGroup = await db.ParallelSubjectGroups.Include(x => x.Members).SingleAsync(x => x.Id == fixture.GroupId);
+        Assert.False(historicalGroup.IsActive);
+        Assert.Equal(2, historicalGroup.Members.Count);
+        Assert.Equal(fixture.GroupId, await db.GeneratedTimetableEntries.Select(x => x.ParallelSubjectGroupId).SingleAsync());
+    }
     [PostgresTimetableFact]
     public async Task MigrationPreservesRowsAcrossAllThreeFeatureMigrations()
     {

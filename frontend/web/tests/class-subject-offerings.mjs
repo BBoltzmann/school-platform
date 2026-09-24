@@ -68,6 +68,12 @@ test("parallel group management and effective timetable capacity are visible", (
   assert.match(groups, /Configured groups/);
   assert.match(groups, /Reset Parallel Groups/);
   assert.match(groups, /Delete/);
+  assert.match(groups, /Retry/);
+  assert.match(groups, /periods\/week/);
+  assert.match(groups, /Not configured/);
+  assert.match(groups, /saveRequirement/);
+  assert.match(groups, /Parallel group:/);
+  assert.match(groups, /disabled=\{resettingGroups \|\| !academicSessionId\}/);
   assert.match(resetRoute, /authenticatedBackendFetch/);
   assert.match(requirements, /Parallel savings/);
   assert.match(requirements, /Timetable periods required/);

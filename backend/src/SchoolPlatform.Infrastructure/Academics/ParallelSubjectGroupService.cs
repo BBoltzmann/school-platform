@@ -36,7 +36,7 @@ public sealed class ParallelSubjectGroupService(
     public async Task<ParallelSubjectGroupResult> UpdateAsync(Guid classGroupId, Guid groupId, SaveParallelSubjectGroupRequest request, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.TenantId;
-        var group = await database.ParallelSubjectGroups.Include(x => x.Members).SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantId && x.ClassGroupId == classGroupId, cancellationToken) ?? throw new InvalidOperationException("Parallel subject group was not found.");
+        var group = await database.ParallelSubjectGroups.Include(x => x.Members).SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive, cancellationToken) ?? throw new InvalidOperationException("Parallel subject group was not found.");
         if (group.AcademicSessionId != request.AcademicSessionId) throw new InvalidOperationException("The academic session cannot be changed for this group.");
         var classSubjects = await ValidateMembersAsync(classGroupId, request, groupId, cancellationToken);
         group.UpdateDisplayName(request.DisplayName);
@@ -50,7 +50,7 @@ public sealed class ParallelSubjectGroupService(
     {
         var group = await database.ParallelSubjectGroups
             .Include(x => x.Members)
-            .SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantContext.TenantId && x.ClassGroupId == classGroupId, cancellationToken)
+            .SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantContext.TenantId && x.ClassGroupId == classGroupId && x.IsActive, cancellationToken)
             ?? throw new InvalidOperationException("Parallel subject group was not found.");
         if (await database.GeneratedTimetableEntries.AnyAsync(x => x.TenantId == tenantContext.TenantId && x.ParallelSubjectGroupId == groupId, cancellationToken))
         {
@@ -80,17 +80,18 @@ public sealed class ParallelSubjectGroupService(
             return;
         }
 
-        if (await database.GeneratedTimetableEntries.AnyAsync(
-                x =>
-                    x.TenantId == tenantId &&
-                    groups.Select(group => group.Id).Contains(x.ParallelSubjectGroupId!.Value),
-                cancellationToken))
-        {
-            throw new InvalidOperationException(
-                "These parallel groups are used by a generated timetable. Reset the generated timetable before clearing them.");
-        }
+        var groupIds = groups.Select(group => group.Id).ToArray();
+        var hasGeneratedHistory = await database.GeneratedTimetableEntries.AnyAsync(
+            x => x.TenantId == tenantId && x.ParallelSubjectGroupId.HasValue && groupIds.Contains(x.ParallelSubjectGroupId.Value),
+            cancellationToken);
 
-        database.ParallelSubjectGroupMembers.RemoveRange(groups.SelectMany(x => x.Members));
+        // Deactivation is safe even when history references the group. Keep its
+        // members in that case so historical timetable relationships remain
+        // descriptive; when there is no history, remove the configuration rows.
+        if (!hasGeneratedHistory)
+        {
+            database.ParallelSubjectGroupMembers.RemoveRange(groups.SelectMany(x => x.Members));
+        }
         foreach (var group in groups)
         {
             group.Deactivate();
@@ -106,11 +107,42 @@ public sealed class ParallelSubjectGroupService(
         var tenantId = tenantContext.TenantId;
         var classSubjects = await database.ClassSubjects.Include(x => x.Subject).Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && ids.Contains(x.Id)).ToListAsync(cancellationToken);
         if (classSubjects.Count != ids.Length) throw new InvalidOperationException("Every selected subject must be offered by this class.");
-        var requirements = await database.ClassSubjectRequirements.Where(x => x.TenantId == tenantId && x.AcademicSessionId == request.AcademicSessionId && x.ClassGroupId == classGroupId && x.IsActive && classSubjects.Select(cs => cs.SubjectId).Contains(x.SubjectId)).ToListAsync(cancellationToken);
-        if (requirements.Count != ids.Length) throw new InvalidOperationException("Every selected subject must have an active weekly requirement for this class and session.");
+        var subjectIds = classSubjects.Select(cs => cs.SubjectId).ToHashSet();
+        var requirements = await database.ClassSubjectRequirements.Where(x => x.TenantId == tenantId && x.AcademicSessionId == request.AcademicSessionId && x.ClassGroupId == classGroupId && x.IsActive && subjectIds.Contains(x.SubjectId)).ToListAsync(cancellationToken);
+        var missingRequirementNames = classSubjects
+            .Where(cs => requirements.All(requirement => requirement.SubjectId != cs.SubjectId))
+            .Select(cs => cs.Subject.Name)
+            .Distinct()
+            .ToArray();
+        if (missingRequirementNames.Length > 0)
+        {
+            var subjects = string.Join(", ", missingRequirementNames);
+            throw new InvalidOperationException(
+                $"{subjects} {(missingRequirementNames.Length == 1 ? "has" : "have")} no weekly period requirement. Set periods/week before creating this parallel group.");
+        }
         if (requirements.Select(x => x.PeriodsPerWeek).Distinct().Count() != 1) throw new InvalidOperationException("Subjects in a parallel group must have matching weekly period requirements.");
-        var alreadyGrouped = await database.ParallelSubjectGroupMembers.Include(x => x.ParallelSubjectGroup).Where(x => x.TenantId == tenantId && x.ParallelSubjectGroup.ClassGroupId == classGroupId && x.ParallelSubjectGroup.AcademicSessionId == request.AcademicSessionId && x.ParallelSubjectGroup.IsActive && (!currentGroupId.HasValue || x.ParallelSubjectGroupId != currentGroupId.Value) && ids.Contains(x.ClassSubjectId)).AnyAsync(cancellationToken);
-        if (alreadyGrouped) throw new InvalidOperationException("A selected subject already belongs to another active parallel group for this class and session.");
+        var conflicts = await database.ParallelSubjectGroupMembers
+            .Include(x => x.ParallelSubjectGroup)
+            .ThenInclude(x => x.Members)
+            .ThenInclude(x => x.ClassSubject)
+            .ThenInclude(x => x.Subject)
+            .Where(x => x.TenantId == tenantId && x.ParallelSubjectGroup.ClassGroupId == classGroupId && x.ParallelSubjectGroup.AcademicSessionId == request.AcademicSessionId && x.ParallelSubjectGroup.IsActive && (!currentGroupId.HasValue || x.ParallelSubjectGroupId != currentGroupId.Value) && ids.Contains(x.ClassSubjectId))
+            .ToListAsync(cancellationToken);
+        if (conflicts.Count > 0)
+        {
+            var conflictMessages = conflicts
+                .GroupBy(x => x.ClassSubjectId)
+                .Select(group =>
+                {
+                    var conflict = group.First();
+                    var configuredName = conflict.ParallelSubjectGroup.DisplayName;
+                    var fallbackName = string.Join(" / ", conflict.ParallelSubjectGroup.Members.Select(member => member.ClassSubject.Subject.Name));
+                    var groupName = string.IsNullOrWhiteSpace(configuredName) ? fallbackName : configuredName;
+                    var memberNames = string.Join(", ", conflict.ParallelSubjectGroup.Members.Select(member => member.ClassSubject.Subject.Name));
+                    return $"{conflict.ClassSubject.Subject.Name} already belongs to '{groupName}' with {memberNames}.";
+                });
+            throw new InvalidOperationException(string.Join(" ", conflictMessages));
+        }
         return classSubjects;
     }
 
