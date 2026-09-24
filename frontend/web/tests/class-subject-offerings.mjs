@@ -18,7 +18,10 @@ test("subjects are saved through an authenticated BFF route", () => {
   const route = read("app/api/academics/classes/[id]/subjects/route.ts");
   assert.match(route, /authenticatedBackendFetch/);
   assert.match(route, /export async function PUT/);
+  assert.match(route, /export async function POST/);
   assert.match(read("components/academics/class-subject-actions.tsx"), /method: "PUT"/);
+  assert.match(read("components/academics/class-subject-actions.tsx"), /Reset Selected Subjects/);
+  assert.match(read("components/academics/class-subject-actions.tsx"), /window\.confirm/);
 });
 
 test("parallel groups use persisted ClassSubject ids and controlled checkboxes", () => {

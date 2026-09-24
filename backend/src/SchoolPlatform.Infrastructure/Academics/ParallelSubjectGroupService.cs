@@ -48,7 +48,15 @@ public sealed class ParallelSubjectGroupService(
 
     public async Task DeleteAsync(Guid classGroupId, Guid groupId, CancellationToken cancellationToken = default)
     {
-        var group = await database.ParallelSubjectGroups.SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantContext.TenantId && x.ClassGroupId == classGroupId, cancellationToken) ?? throw new InvalidOperationException("Parallel subject group was not found.");
+        var group = await database.ParallelSubjectGroups
+            .Include(x => x.Members)
+            .SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantContext.TenantId && x.ClassGroupId == classGroupId, cancellationToken)
+            ?? throw new InvalidOperationException("Parallel subject group was not found.");
+        if (await database.GeneratedTimetableEntries.AnyAsync(x => x.TenantId == tenantContext.TenantId && x.ParallelSubjectGroupId == groupId, cancellationToken))
+        {
+            throw new InvalidOperationException("This parallel group is used by a generated timetable. Reset the generated timetable before removing the group.");
+        }
+        database.ParallelSubjectGroupMembers.RemoveRange(group.Members);
         group.Deactivate();
         await database.SaveChangesAsync(cancellationToken);
     }

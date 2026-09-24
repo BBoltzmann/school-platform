@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using SchoolPlatform.Application.Academics;
 using SchoolPlatform.Application.Common.Security;
 
@@ -18,6 +19,15 @@ public static class ClassSubjectEndpoints
         {
             if (!currentUser.HasPermission("academics.configure")) return Results.Forbid();
             try { return Results.Ok(await service.SetAsync(classGroupId, request, cancellationToken)); }
+            catch (DbUpdateException) { return Results.Conflict(new { error = "These subjects are used by existing timetable configuration. Remove that configuration first, then try again." }); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        }).RequireAuthorization();
+
+        app.MapPost("/api/academics/classes/{classGroupId:guid}/subjects/reset", async (Guid classGroupId, IClassSubjectService service, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
+        {
+            if (!currentUser.HasPermission("academics.configure")) return Results.Forbid();
+            try { return Results.Ok(await service.ResetAsync(classGroupId, cancellationToken)); }
+            catch (DbUpdateException) { return Results.Conflict(new { error = "The class subject configuration is still referenced by timetable data. Reset the generated timetable first." }); }
             catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         }).RequireAuthorization();
     }

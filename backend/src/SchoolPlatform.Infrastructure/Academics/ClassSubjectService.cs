@@ -31,9 +31,62 @@ public sealed class ClassSubjectService(SchoolPlatformDbContext database, ITenan
         var existingAssigned = await database.TeachingAssignments.AsNoTracking().Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive).Select(x => x.SubjectId).Distinct().ToListAsync(cancellationToken);
         if (existingAssigned.Any(x => !ids.Contains(x))) throw new InvalidOperationException("A subject with an existing teaching assignment cannot be removed.");
         var existing = await database.ClassSubjects.Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId).ToListAsync(cancellationToken);
-        database.ClassSubjects.RemoveRange(existing);
-        foreach (var subjectId in ids) database.ClassSubjects.Add(new ClassSubject(tenantId, classGroupId, subjectId));
+        var requested = ids.ToHashSet();
+        var removed = existing.Where(x => !requested.Contains(x.SubjectId)).ToList();
+        if (removed.Count > 0)
+        {
+            var removedIds = removed.Select(x => x.Id).ToArray();
+            var groupedSubjects = await database.ParallelSubjectGroupMembers
+                .AsNoTracking()
+                .Where(x => x.TenantId == tenantId && removedIds.Contains(x.ClassSubjectId) && x.ParallelSubjectGroup.IsActive)
+                .Select(x => x.ClassSubject.Subject.Name)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            if (groupedSubjects.Count > 0)
+            {
+                throw new InvalidOperationException($"Remove the parallel group containing {string.Join(", ", groupedSubjects)} before removing those subjects from this class.");
+            }
+            database.ClassSubjects.RemoveRange(removed);
+        }
+
+        var existingSubjectIds = existing.Select(x => x.SubjectId).ToHashSet();
+        foreach (var subjectId in ids.Where(subjectId => !existingSubjectIds.Contains(subjectId)))
+        {
+            database.ClassSubjects.Add(new ClassSubject(tenantId, classGroupId, subjectId));
+        }
         classGroup.SetSubjectOfferingMode(true);
+        await database.SaveChangesAsync(cancellationToken);
+        return await GetAsync(classGroupId, cancellationToken);
+    }
+
+    public async Task<ClassSubjectOfferingResult> ResetAsync(Guid classGroupId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantContext.TenantId;
+        var classGroup = await database.ClassGroups.SingleOrDefaultAsync(x => x.Id == classGroupId && x.TenantId == tenantId, cancellationToken)
+            ?? throw new InvalidOperationException("Class was not found.");
+
+        var hasAssignments = await database.TeachingAssignments.AnyAsync(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive, cancellationToken);
+        if (hasAssignments)
+        {
+            throw new InvalidOperationException("This class still has active teaching assignments. Remove or reassign them before resetting Subjects Offered.");
+        }
+
+        var hasGeneratedEntries = await database.GeneratedTimetableEntries.AnyAsync(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId, cancellationToken);
+        if (hasGeneratedEntries)
+        {
+            throw new InvalidOperationException("Reset the generated timetable before resetting Subjects Offered for this class.");
+        }
+
+        var groups = await database.ParallelSubjectGroups
+            .Include(x => x.Members)
+            .Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId)
+            .ToListAsync(cancellationToken);
+        database.ParallelSubjectGroupMembers.RemoveRange(groups.SelectMany(x => x.Members));
+        database.ParallelSubjectGroups.RemoveRange(groups);
+
+        var existing = await database.ClassSubjects.Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId).ToListAsync(cancellationToken);
+        database.ClassSubjects.RemoveRange(existing);
+        classGroup.SetSubjectOfferingMode(false);
         await database.SaveChangesAsync(cancellationToken);
         return await GetAsync(classGroupId, cancellationToken);
     }

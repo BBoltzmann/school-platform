@@ -22,3 +22,14 @@ export async function GET(request: Request, context: Context) {
 export async function PUT(request: Request, context: Context) {
   return proxy(request, context, "PUT");
 }
+
+export async function POST(request: Request, context: Context) {
+  const { id } = await context.params;
+  const response = await authenticatedBackendFetch(`/api/academics/classes/${id}/subjects/reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  return NextResponse.json(await response.json().catch(() => ({})), { status: response.status });
+}
