@@ -91,7 +91,7 @@ public sealed class AcademicSetupService : IAcademicSetupService
                 x.AcademicLevel.Name,
                 x.IsActive,
                 x.UsesCustomSubjectOffering,
-                x.ClassSubjects.Count))
+                x.ClassSubjects.Count(subject => subject.IsActive)))
             .ToListAsync(cancellationToken);
 
         var subjects = await _database.Subjects
@@ -741,7 +741,7 @@ public sealed class AcademicSetupService : IAcademicSetupService
                 x.AcademicLevel.Name,
                 x.IsActive,
                 x.UsesCustomSubjectOffering,
-                x.ClassSubjects.Count))
+                x.ClassSubjects.Count(subject => subject.IsActive)))
             .SingleAsync(cancellationToken);
     }
 

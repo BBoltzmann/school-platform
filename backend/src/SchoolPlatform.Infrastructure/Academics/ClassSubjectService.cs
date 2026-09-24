@@ -15,7 +15,7 @@ public sealed class ClassSubjectService(SchoolPlatformDbContext database, ITenan
             ?? throw new InvalidOperationException("Class was not found.");
         var assignedIds = classGroup.UsesCustomSubjectOffering ? Array.Empty<Guid>() : await database.TeachingAssignments.AsNoTracking().Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive).Select(x => x.SubjectId).Distinct().ToArrayAsync(cancellationToken);
         var subjects = classGroup.UsesCustomSubjectOffering
-            ? await database.ClassSubjects.AsNoTracking().Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.Subject.IsActive).OrderBy(x => x.Subject.Name).Select(x => new ClassSubjectResult(x.Id, x.SubjectId, x.Subject.Name, x.Subject.Code)).ToListAsync(cancellationToken)
+            ? await database.ClassSubjects.AsNoTracking().Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive && x.Subject.IsActive).OrderBy(x => x.Subject.Name).Select(x => new ClassSubjectResult(x.Id, x.SubjectId, x.Subject.Name, x.Subject.Code)).ToListAsync(cancellationToken)
             : await database.Subjects.AsNoTracking().Where(x => x.TenantId == tenantId && x.IsActive && assignedIds.Contains(x.Id)).OrderBy(x => x.Name).Select(x => new ClassSubjectResult(Guid.Empty, x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
         return new(classGroup.Id, classGroup.UsesCustomSubjectOffering, subjects);
     }
@@ -28,25 +28,13 @@ public sealed class ClassSubjectService(SchoolPlatformDbContext database, ITenan
         var ids = request.SubjectIds.Distinct().ToArray();
         var subjects = await database.Subjects.Where(x => x.TenantId == tenantId && x.IsActive && ids.Contains(x.Id)).ToListAsync(cancellationToken);
         if (subjects.Count != ids.Length) throw new InvalidOperationException("One or more subjects were not found for this school.");
-        var existingAssigned = await database.TeachingAssignments.AsNoTracking().Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive).Select(x => x.SubjectId).Distinct().ToListAsync(cancellationToken);
-        if (existingAssigned.Any(x => !ids.Contains(x))) throw new InvalidOperationException("A subject with an existing teaching assignment cannot be removed.");
         var existing = await database.ClassSubjects.Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId).ToListAsync(cancellationToken);
         var requested = ids.ToHashSet();
         var removed = existing.Where(x => !requested.Contains(x.SubjectId)).ToList();
         if (removed.Count > 0)
         {
-            var removedIds = removed.Select(x => x.Id).ToArray();
-            var groupedSubjects = await database.ParallelSubjectGroupMembers
-                .AsNoTracking()
-                .Where(x => x.TenantId == tenantId && removedIds.Contains(x.ClassSubjectId) && x.ParallelSubjectGroup.IsActive)
-                .Select(x => x.ClassSubject.Subject.Name)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-            if (groupedSubjects.Count > 0)
-            {
-                throw new InvalidOperationException($"Remove the parallel group containing {string.Join(", ", groupedSubjects)} before removing those subjects from this class.");
-            }
-            database.ClassSubjects.RemoveRange(removed);
+            foreach (var offering in removed)
+                offering.Deactivate();
         }
 
         var existingSubjectIds = existing.Select(x => x.SubjectId).ToHashSet();
@@ -54,39 +42,48 @@ public sealed class ClassSubjectService(SchoolPlatformDbContext database, ITenan
         {
             database.ClassSubjects.Add(new ClassSubject(tenantId, classGroupId, subjectId));
         }
+        foreach (var offering in existing.Where(x => requested.Contains(x.SubjectId)))
+            offering.Activate();
+        var removedIds = removed.Select(x => x.Id).ToArray();
+        if (removedIds.Length > 0)
+        {
+            var activeGroups = await database.ParallelSubjectGroups
+                .Include(x => x.Members)
+                .Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive && x.Members.Any(member => removedIds.Contains(member.ClassSubjectId)))
+                .ToListAsync(cancellationToken);
+            foreach (var group in activeGroups)
+                group.Deactivate();
+        }
         classGroup.SetSubjectOfferingMode(true);
         await database.SaveChangesAsync(cancellationToken);
         return await GetAsync(classGroupId, cancellationToken);
     }
 
-    public async Task<ClassSubjectOfferingResult> ResetAsync(Guid classGroupId, CancellationToken cancellationToken = default)
+    public async Task<ClassSubjectOfferingResult> ResetAsync(Guid classGroupId, Guid academicSessionId, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.TenantId;
         var classGroup = await database.ClassGroups.SingleOrDefaultAsync(x => x.Id == classGroupId && x.TenantId == tenantId, cancellationToken)
             ?? throw new InvalidOperationException("Class was not found.");
-
-        var hasAssignments = await database.TeachingAssignments.AnyAsync(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive, cancellationToken);
-        if (hasAssignments)
-        {
-            throw new InvalidOperationException("This class still has active teaching assignments. Remove or reassign them before resetting Subjects Offered.");
-        }
-
-        var hasGeneratedEntries = await database.GeneratedTimetableEntries.AnyAsync(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId, cancellationToken);
-        if (hasGeneratedEntries)
-        {
-            throw new InvalidOperationException("Reset the generated timetable before resetting Subjects Offered for this class.");
-        }
+        if (!await database.AcademicSessions.AnyAsync(x => x.Id == academicSessionId && x.TenantId == tenantId && x.IsActive, cancellationToken))
+            throw new InvalidOperationException("Academic session was not found.");
 
         var groups = await database.ParallelSubjectGroups
             .Include(x => x.Members)
-            .Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId)
+            // ClassSubject offerings are class-wide, so retiring them must
+            // retire every active parallel configuration for this class. The
+            // requested session still scopes the reset API and validates the
+            // caller's intended session; parallel groups themselves are
+            // session-specific and cannot remain active against inactive
+            // class offerings in another session.
+            .Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive)
             .ToListAsync(cancellationToken);
-        database.ParallelSubjectGroupMembers.RemoveRange(groups.SelectMany(x => x.Members));
-        database.ParallelSubjectGroups.RemoveRange(groups);
+        foreach (var group in groups)
+            group.Deactivate();
 
         var existing = await database.ClassSubjects.Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId).ToListAsync(cancellationToken);
-        database.ClassSubjects.RemoveRange(existing);
-        classGroup.SetSubjectOfferingMode(false);
+        foreach (var offering in existing)
+            offering.Deactivate();
+        classGroup.SetSubjectOfferingMode(true);
         await database.SaveChangesAsync(cancellationToken);
         return await GetAsync(classGroupId, cancellationToken);
     }

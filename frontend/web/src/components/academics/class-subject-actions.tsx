@@ -80,12 +80,12 @@ export function ClassSubjectActions({ classGroup, subjects, academicSessionId }:
   }, [open, groupOpen, classGroup.id, academicSessionId, loadGroups, loadRequirements]);
   async function save() { setSaving(true); setError(null); try { const response = await fetch(`/api/academics/classes/${classGroup.id}/subjects`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subjectIds: selected }) }); const result = await response.json(); if (!response.ok) { setError(result.error ?? "Unable to save subjects."); return; } setSelected(result.subjects.map((x: { subjectId: string }) => x.subjectId)); setPersistedSubjects(result.subjects.filter((x: { id: string }) => Boolean(x.id))); setOpen(false); router.refresh(); } catch { setError("Unable to save subjects. Check your connection and try again."); } finally { setSaving(false); } }
   async function resetSubjects() {
-    if (!window.confirm(`Reset Subjects Offered for ${classGroup.name}? This clears only this class configuration and does not delete school subjects.`)) return;
+    if (!window.confirm(`Reset Subjects Offered for ${classGroup.name}? This clears the current subject selection while preserving existing teacher assignments and historical records. Subjects selected again retain their existing teacher assignments and saved weekly requirements where available.`)) return;
     setSaving(true); setError(null);
     try {
-      const response = await fetch(`/api/academics/classes/${classGroup.id}/subjects`, { method: "POST" });
+      const response = await fetch(`/api/academics/classes/${classGroup.id}/subjects?academicSessionId=${encodeURIComponent(academicSessionId)}`, { method: "POST" });
       const result = await response.json();
-      if (!response.ok) { setError(result.error ?? "Unable to reset subjects offered."); return; }
+        if (!response.ok) { setError(result.error ?? "Unable to reset subjects offered."); return; }
       setSelected([]); setPersistedSubjects([]); setOpen(false); router.refresh();
     } catch { setError("Unable to reset subjects offered. Check your connection and try again."); }
     finally { setSaving(false); }

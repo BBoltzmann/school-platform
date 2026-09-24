@@ -8,5 +8,5 @@ public interface IClassSubjectService
 {
     Task<ClassSubjectOfferingResult> GetAsync(Guid classGroupId, CancellationToken cancellationToken = default);
     Task<ClassSubjectOfferingResult> SetAsync(Guid classGroupId, SetClassSubjectsRequest request, CancellationToken cancellationToken = default);
-    Task<ClassSubjectOfferingResult> ResetAsync(Guid classGroupId, CancellationToken cancellationToken = default);
+    Task<ClassSubjectOfferingResult> ResetAsync(Guid classGroupId, Guid academicSessionId, CancellationToken cancellationToken = default);
 }

@@ -105,7 +105,7 @@ public sealed class ParallelSubjectGroupService(
         var ids = request.ClassSubjectIds.Distinct().ToArray();
         if (ids.Length < 2) throw new InvalidOperationException("A parallel subject group must contain at least two subjects.");
         var tenantId = tenantContext.TenantId;
-        var classSubjects = await database.ClassSubjects.Include(x => x.Subject).Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && ids.Contains(x.Id)).ToListAsync(cancellationToken);
+        var classSubjects = await database.ClassSubjects.Include(x => x.Subject).Where(x => x.TenantId == tenantId && x.ClassGroupId == classGroupId && x.IsActive && ids.Contains(x.Id)).ToListAsync(cancellationToken);
         if (classSubjects.Count != ids.Length) throw new InvalidOperationException("Every selected subject must be offered by this class.");
         var subjectIds = classSubjects.Select(cs => cs.SubjectId).ToHashSet();
         var requirements = await database.ClassSubjectRequirements.Where(x => x.TenantId == tenantId && x.AcademicSessionId == request.AcademicSessionId && x.ClassGroupId == classGroupId && x.IsActive && subjectIds.Contains(x.SubjectId)).ToListAsync(cancellationToken);

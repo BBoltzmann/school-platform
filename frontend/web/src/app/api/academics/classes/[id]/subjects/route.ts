@@ -25,7 +25,8 @@ export async function PUT(request: Request, context: Context) {
 
 export async function POST(request: Request, context: Context) {
   const { id } = await context.params;
-  const response = await authenticatedBackendFetch(`/api/academics/classes/${id}/subjects/reset`, {
+  const query = new URL(request.url).search;
+  const response = await authenticatedBackendFetch(`/api/academics/classes/${id}/subjects/reset${query}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });

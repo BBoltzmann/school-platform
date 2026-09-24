@@ -67,7 +67,7 @@ public sealed class TimetablePlanningService
                     x.AcademicLevelId,
                     x.AcademicLevel.Name,
                     x.UsesCustomSubjectOffering,
-                    x.ClassSubjects.Select(cs => cs.SubjectId).ToList()))
+                    x.ClassSubjects.Where(cs => cs.IsActive).Select(cs => cs.SubjectId).ToList()))
                 .ToListAsync(cancellationToken);
 
         var subjects =
@@ -280,7 +280,7 @@ public sealed class TimetablePlanningService
                     x.ClassGroupId == classGroupId &&
                     x.IsActive &&
                     (!x.ClassGroup.UsesCustomSubjectOffering ||
-                     x.ClassGroup.ClassSubjects.Any(cs => cs.SubjectId == x.SubjectId)))
+                     x.ClassGroup.ClassSubjects.Any(cs => cs.SubjectId == x.SubjectId && cs.IsActive)))
                 .OrderBy(x =>
                     x.Subject.Name)
                 .Select(x =>
@@ -337,7 +337,7 @@ public sealed class TimetablePlanningService
             await _database.ClassGroups
                 .AsNoTracking()
                 .Where(x => x.Id == classGroupId && x.TenantId == tenantId && x.IsActive)
-                .Select(x => new { x.UsesCustomSubjectOffering, OfferedSubjectIds = x.ClassSubjects.Select(cs => cs.SubjectId).ToList() })
+                .Select(x => new { x.UsesCustomSubjectOffering, OfferedSubjectIds = x.ClassSubjects.Where(cs => cs.IsActive).Select(cs => cs.SubjectId).ToList() })
                 .SingleOrDefaultAsync(
                     cancellationToken);
 

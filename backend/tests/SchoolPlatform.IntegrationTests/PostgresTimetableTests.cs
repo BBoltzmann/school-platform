@@ -81,6 +81,30 @@ public sealed class PostgresTimetableTests
         Assert.Equal(2, historicalGroup.Members.Count);
         Assert.Equal(fixture.GroupId, await db.GeneratedTimetableEntries.Select(x => x.ParallelSubjectGroupId).SingleAsync());
     }
+
+    [PostgresTimetableFact]
+    public async Task SubjectsOfferedResetPreservesAssignmentsAndReactivatesExistingOfferings()
+    {
+        await using var fixture = new PostgresTimetableFixture();
+        await fixture.InitializeAsync(members: 2);
+        await using var db = fixture.Open();
+        var before = await db.ClassSubjects.Where(x => x.ClassGroupId == fixture.ClassId).OrderBy(x => x.SubjectId).Select(x => new { x.Id, x.SubjectId }).ToListAsync();
+        var assignments = await db.TeachingAssignments.Where(x => x.ClassGroupId == fixture.ClassId && x.AcademicSessionId == fixture.SessionId).Select(x => new { x.Id, x.SubjectId, x.StaffMemberId, x.IsActive }).ToListAsync();
+        var service = new SchoolPlatform.Infrastructure.Academics.ClassSubjectService(db, fixture);
+
+        await service.ResetAsync(fixture.ClassId, fixture.SessionId);
+
+        var afterReset = await service.GetAsync(fixture.ClassId);
+        Assert.Empty(afterReset.Subjects);
+        Assert.Equal(assignments.OrderBy(x => x.Id), (await db.TeachingAssignments.Where(x => x.ClassGroupId == fixture.ClassId && x.AcademicSessionId == fixture.SessionId).Select(x => new { x.Id, x.SubjectId, x.StaffMemberId, x.IsActive }).ToListAsync()).OrderBy(x => x.Id));
+        Assert.All(await db.ClassSubjects.Where(x => x.ClassGroupId == fixture.ClassId).ToListAsync(), offering => Assert.False(offering.IsActive));
+
+        var restored = await service.SetAsync(fixture.ClassId, new SetClassSubjectsRequest([before[0].SubjectId]));
+        Assert.Single(restored.Subjects);
+        Assert.Equal(before[0].Id, restored.Subjects.Single().Id);
+        Assert.Equal(assignments[0].IsActive, await db.TeachingAssignments.Where(x => x.Id == assignments[0].Id).Select(x => x.IsActive).SingleAsync());
+        Assert.Equal(2, await db.ClassSubjects.CountAsync(x => x.ClassGroupId == fixture.ClassId));
+    }
     [PostgresTimetableFact]
     public async Task MigrationPreservesRowsAcrossAllThreeFeatureMigrations()
     {
@@ -102,6 +126,7 @@ public sealed class PostgresTimetableTests
             await using var command = db.Database.GetDbConnection().CreateCommand();
             var excluded = table switch
             {
+                "class_subjects" => "ARRAY['IsActive']",
                 "generated_timetables" => "ARRAY['VersionNumber','IsActive','ActivatedAtUtc','SupersededAtUtc']",
                 "generated_timetable_entries" => "ARRAY['ParallelSubjectGroupId','ParallelOccurrenceId']",
                 _ => "ARRAY[]::text[]"

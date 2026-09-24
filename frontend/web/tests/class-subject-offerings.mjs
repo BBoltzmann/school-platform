@@ -21,6 +21,8 @@ test("subjects are saved through an authenticated BFF route", () => {
   assert.match(route, /export async function POST/);
   assert.match(read("components/academics/class-subject-actions.tsx"), /method: "PUT"/);
   assert.match(read("components/academics/class-subject-actions.tsx"), /Reset Selected Subjects/);
+  assert.match(read("components/academics/class-subject-actions.tsx"), /preserving existing teacher assignments/);
+  assert.match(read("components/academics/class-subject-actions.tsx"), /academicSessionId=\$\{encodeURIComponent\(academicSessionId\)\}/);
   assert.match(read("components/academics/class-subject-actions.tsx"), /window\.confirm/);
 });
 

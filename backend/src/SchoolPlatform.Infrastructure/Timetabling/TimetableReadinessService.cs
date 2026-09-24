@@ -176,7 +176,7 @@ public sealed class TimetableReadinessService
                     x.AcademicSessionId == session.Id &&
                     x.IsActive &&
                     (!x.ClassGroup.UsesCustomSubjectOffering ||
-                     x.ClassGroup.ClassSubjects.Any(cs => cs.SubjectId == x.SubjectId)))
+                     x.ClassGroup.ClassSubjects.Any(cs => cs.SubjectId == x.SubjectId && cs.IsActive)))
                 .Select(x => new
                 {
                     x.Id,
@@ -194,7 +194,7 @@ public sealed class TimetableReadinessService
         var parallelGroups = await _database.ParallelSubjectGroups
             .AsNoTracking()
             .Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.IsActive)
-            .Select(x => new { x.ClassGroupId, Members = x.Members.Select(m => m.ClassSubject.SubjectId).ToList() })
+            .Select(x => new { x.ClassGroupId, Members = x.Members.Where(m => m.ClassSubject.IsActive).Select(m => m.ClassSubject.SubjectId).ToList() })
             .ToListAsync(cancellationToken);
 
         var assignments =

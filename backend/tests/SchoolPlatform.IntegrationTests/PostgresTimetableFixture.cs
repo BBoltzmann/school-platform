@@ -33,7 +33,8 @@ internal sealed class PostgresTimetableFixture : IAsyncDisposable, ITenantContex
         "20260921120000_AddParallelSubjectGroupFoundation",
         "20260921150000_AddParallelTimetableOccurrence",
         "20260922100000_AddTimetableVersions",
-        "20260924124545_AddFeeStructureStudentAssignments"
+        "20260924124545_AddFeeStructureStudentAssignments",
+        "20260924173234_AddClassSubjectActiveState"
     ];
     private readonly string databaseName = "school_timetable_test_" + Guid.NewGuid().ToString("N");
     private readonly string adminConnection;
@@ -78,6 +79,12 @@ internal sealed class PostgresTimetableFixture : IAsyncDisposable, ITenantContex
         Assert.True(db.Database.IsNpgsql());
         Assert.Equal(FeatureMigrations, db.Database.GetMigrations().TakeLast(FeatureMigrations.Length));
         await db.GetService<IMigrator>().MigrateAsync(baseline ? Baseline : null);
+        // The migration-preservation fixture intentionally starts before the
+        // feature migrations, while the test assembly uses the current model
+        // to seed data. Add the approved column only for seeding, then remove
+        // it so the real migration is exercised below.
+        if (baseline)
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE class_subjects ADD COLUMN \"IsActive\" boolean NOT NULL DEFAULT TRUE;");
         var tenant = new Tenant("Timetable fixture", TenantSlug);
         TenantId = tenant.Id;
         var campus = new Campus(TenantId, "Fixture campus");
@@ -119,6 +126,8 @@ internal sealed class PostgresTimetableFixture : IAsyncDisposable, ITenantContex
                     new TeachingAssignment(TenantId, teacher.Id, SessionId, OtherClassId, subject.Id));
         }
         await db.SaveChangesAsync();
+        if (baseline)
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE class_subjects DROP COLUMN \"IsActive\";");
     }
 
     public TimetableGenerationService Service(SchoolPlatformDbContext db) =>

@@ -134,7 +134,7 @@ public sealed class TimetableGenerationService
                     x.AcademicSessionId == session.Id &&
                     x.IsActive &&
                     (!x.ClassGroup.UsesCustomSubjectOffering ||
-                     x.ClassGroup.ClassSubjects.Any(cs => cs.SubjectId == x.SubjectId)))
+                     x.ClassGroup.ClassSubjects.Any(cs => cs.SubjectId == x.SubjectId && cs.IsActive)))
                 .Select(x => new RequirementRecord(
                     x.ClassGroupId,
                     x.ClassGroup.Name,
@@ -190,7 +190,7 @@ public sealed class TimetableGenerationService
         var configuredGroups = await _database.ParallelSubjectGroups
             .AsNoTracking()
             .Where(x => x.TenantId == tenantId && x.AcademicSessionId == session.Id && x.IsActive && (!request.ClassGroupId.HasValue || x.ClassGroupId == request.ClassGroupId.Value))
-            .Select(x => new { x.Id, x.ClassGroupId, x.DisplayName, Members = x.Members.Select(m => m.ClassSubject.SubjectId).ToList() })
+            .Select(x => new { x.Id, x.ClassGroupId, x.DisplayName, Members = x.Members.Where(m => m.ClassSubject.IsActive).Select(m => m.ClassSubject.SubjectId).ToList() })
             .ToListAsync(cancellationToken);
         var groupedSubjects = configuredGroups.SelectMany(x => x.Members.Select(subjectId => (x.ClassGroupId, subjectId))).ToHashSet();
 

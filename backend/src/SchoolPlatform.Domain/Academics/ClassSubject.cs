@@ -14,10 +14,15 @@ public sealed class ClassSubject : TenantEntity
         TenantId = tenantId;
         ClassGroupId = classGroupId;
         SubjectId = subjectId;
+        IsActive = true;
     }
 
     public Guid ClassGroupId { get; private set; }
     public Guid SubjectId { get; private set; }
+    public bool IsActive { get; private set; }
     public ClassGroup ClassGroup { get; private set; } = null!;
     public Subject Subject { get; private set; } = null!;
+
+    public void Activate() => IsActive = true;
+    public void Deactivate() => IsActive = false;
 }

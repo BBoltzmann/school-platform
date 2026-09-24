@@ -85,7 +85,7 @@ public sealed class TeachingAssignmentService
                         x.AcademicLevelId,
                         x.AcademicLevel.Name,
                         x.UsesCustomSubjectOffering,
-                        x.ClassSubjects.Select(cs => cs.SubjectId).ToList()))
+                        x.ClassSubjects.Where(cs => cs.IsActive).Select(cs => cs.SubjectId).ToList()))
                 .ToListAsync(
                     cancellationToken);
 
@@ -261,7 +261,8 @@ public sealed class TeachingAssignmentService
             !await _database.ClassSubjects.AnyAsync(
                 x => x.TenantId == tenantId &&
                      x.ClassGroupId == classGroup.Id &&
-                     x.SubjectId == subject.Id,
+                     x.SubjectId == subject.Id &&
+                     x.IsActive,
                 cancellationToken))
         {
             throw new InvalidOperationException(
