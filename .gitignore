@@ -1,2 +1,36 @@
 .vercel
 .env*
+
+# .NET generated build artifacts
+**/bin/
+**/obj/
+
+# Frontend generated/dependency files
+**/node_modules/
+**/.next/
+**/.vercel/
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# .NET generated build artifacts
+**/bin/
+**/obj/
+
+# Frontend generated/dependency files
+**/node_modules/
+**/.next/
+**/.vercel/
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log

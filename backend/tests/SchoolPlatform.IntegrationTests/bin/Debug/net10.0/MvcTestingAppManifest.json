@@ -1,6 +1,0 @@
-{
-  "SchoolPlatform.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/cedriccampbell\/dev\/school-platform\/backend\/src\/SchoolPlatform.Api",
-  "SchoolPlatform.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/cedriccampbell\/dev\/school-platform\/backend\/src\/SchoolPlatform.Application",
-  "SchoolPlatform.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/cedriccampbell\/dev\/school-platform\/backend\/src\/SchoolPlatform.Domain",
-  "SchoolPlatform.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/cedriccampbell\/dev\/school-platform\/backend\/src\/SchoolPlatform.Infrastructure"
-}
