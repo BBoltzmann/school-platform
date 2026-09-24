@@ -48,7 +48,14 @@ public sealed class ParallelSubjectGroupService(
 
     public async Task DeleteAsync(Guid classGroupId, Guid groupId, CancellationToken cancellationToken = default)
     {
-        var group = await database.ParallelSubjectGroups.SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantContext.TenantId && x.ClassGroupId == classGroupId, cancellationToken) ?? throw new InvalidOperationException("Parallel subject group was not found.");
+        var group = await database.ParallelSubjectGroups
+            .Include(x => x.Members)
+            .SingleOrDefaultAsync(x => x.Id == groupId && x.TenantId == tenantContext.TenantId && x.ClassGroupId == classGroupId, cancellationToken)
+            ?? throw new InvalidOperationException("Parallel subject group was not found.");
+        // Removing a group removes only its relationship rows.  Keeping the
+        // member rows on a deactivated group would leave restrictive FKs that
+        // prevent an administrator from later removing an offered subject.
+        database.ParallelSubjectGroupMembers.RemoveRange(group.Members);
         group.Deactivate();
         await database.SaveChangesAsync(cancellationToken);
     }
