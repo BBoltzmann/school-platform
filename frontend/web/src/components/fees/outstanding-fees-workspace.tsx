@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useState,
 } from "react";
@@ -40,16 +41,7 @@ export function OutstandingFeesWorkspace({
       null
     );
 
-  useEffect(() => {
-    if (!academicTermId) {
-      return;
-    }
-
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [academicTermId]);
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -59,16 +51,29 @@ export function OutstandingFeesWorkspace({
           `/api/fees/outstanding?academicTermId=${academicTermId}`
         );
 
-      const result =
-        await response.json();
+      const body = await response.text();
+      let result: unknown = {};
+
+      try {
+        result = body ? JSON.parse(body) : {};
+      } catch {
+        result = {
+          error: "Outstanding fees service returned an invalid response.",
+        };
+      }
 
       if (!response.ok) {
         throw new Error(
-          result.error
+          typeof result === "object" &&
+            result !== null &&
+            "error" in result &&
+            typeof result.error === "string"
+            ? result.error
+            : "Unable to load outstanding fees."
         );
       }
 
-      setRows(result);
+      setRows(Array.isArray(result) ? result : []);
     } catch (exception) {
       setError(
         exception instanceof Error
@@ -78,7 +83,17 @@ export function OutstandingFeesWorkspace({
     } finally {
       setLoading(false);
     }
-  }
+  }, [academicTermId]);
+
+  useEffect(() => {
+    if (!academicTermId) {
+      return;
+    }
+
+    // Loading server data when the selected term changes is intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+  }, [academicTermId, load]);
 
   const total =
     rows.reduce(

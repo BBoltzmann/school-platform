@@ -819,6 +819,46 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.ToTable("fee_structure_lines", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolPlatform.Domain.Fees.FeeStructureStudentAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AssignedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("FeeStructureId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeeStructureId");
+
+                    b.HasIndex("StudentId");
+
+                    b.HasIndex("TenantId", "FeeStructureId");
+
+                    b.HasIndex("TenantId", "StudentId");
+
+                    b.HasIndex("TenantId", "FeeStructureId", "StudentId")
+                        .IsUnique();
+
+                    b.ToTable("fee_structure_student_assignments", (string)null);
+                });
+
             modelBuilder.Entity("SchoolPlatform.Domain.Fees.StudentFeeCharge", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2586,6 +2626,25 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.Navigation("FeeItem");
 
                     b.Navigation("FeeStructure");
+                });
+
+            modelBuilder.Entity("SchoolPlatform.Domain.Fees.FeeStructureStudentAssignment", b =>
+                {
+                    b.HasOne("SchoolPlatform.Domain.Fees.FeeStructure", "FeeStructure")
+                        .WithMany()
+                        .HasForeignKey("FeeStructureId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SchoolPlatform.Domain.Students.Student", "Student")
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FeeStructure");
+
+                    b.Navigation("Student");
                 });
 
             modelBuilder.Entity("SchoolPlatform.Domain.Fees.StudentFeeCharge", b =>

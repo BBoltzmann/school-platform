@@ -17,6 +17,27 @@ public interface IFeesService
         CreateFeeStructureRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<FeeStructureResult> UpdateStructureAsync(
+        Guid feeStructureId,
+        UpdateFeeStructureRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<FeeStructureStudentResult>>
+        GetAssignedStudentsAsync(
+            Guid feeStructureId,
+            CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<FeeStructureStudentResult>>
+        ReplaceAssignedStudentsAsync(
+            Guid feeStructureId,
+            ReplaceFeeStructureStudentsRequest request,
+            CancellationToken cancellationToken = default);
+
+    Task RemoveStudentAssignmentAsync(
+        Guid feeStructureId,
+        Guid studentId,
+        CancellationToken cancellationToken = default);
+
     Task<GenerateChargesResult> GenerateChargesAsync(
         Guid feeStructureId,
         CancellationToken cancellationToken = default);

@@ -107,6 +107,95 @@ public static class FeesEndpoints
                         cancellationToken));
             });
 
+        group.MapPut(
+            "/structures/{feeStructureId:guid}",
+            async (
+                Guid feeStructureId,
+                UpdateFeeStructureRequest request,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.update"))
+                {
+                    return Results.Forbid();
+                }
+
+                return await ExecuteAsync(
+                    () => service.UpdateStructureAsync(
+                        feeStructureId,
+                        request,
+                        cancellationToken));
+            });
+
+        group.MapGet(
+            "/structures/{feeStructureId:guid}/students",
+            async (
+                Guid feeStructureId,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.read"))
+                {
+                    return Results.Forbid();
+                }
+
+                return await ExecuteAsync(
+                    () => service.GetAssignedStudentsAsync(
+                        feeStructureId,
+                        cancellationToken));
+            });
+
+        group.MapPut(
+            "/structures/{feeStructureId:guid}/students",
+            async (
+                Guid feeStructureId,
+                ReplaceFeeStructureStudentsRequest request,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.update"))
+                {
+                    return Results.Forbid();
+                }
+
+                return await ExecuteAsync(
+                    () => service.ReplaceAssignedStudentsAsync(
+                        feeStructureId,
+                        request,
+                        cancellationToken));
+            });
+
+        group.MapDelete(
+            "/structures/{feeStructureId:guid}/students/{studentId:guid}",
+            async (
+                Guid feeStructureId,
+                Guid studentId,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.update"))
+                {
+                    return Results.Forbid();
+                }
+
+                return await ExecuteAsync(async () =>
+                {
+                    await service.RemoveStudentAssignmentAsync(
+                        feeStructureId,
+                        studentId,
+                        cancellationToken);
+
+                    return new
+                    {
+                        success = true
+                    };
+                });
+            });
+
         group.MapPost(
             "/students/{studentId:guid}/charges",
             async (
@@ -223,8 +312,8 @@ public static class FeesEndpoints
                     return Results.Forbid();
                 }
 
-                return Results.Ok(
-                    await service.GetOutstandingAsync(
+                return await ExecuteAsync(
+                    () => service.GetOutstandingAsync(
                         academicTermId,
                         cancellationToken));
             });

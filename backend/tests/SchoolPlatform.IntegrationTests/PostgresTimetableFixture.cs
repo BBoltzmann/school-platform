@@ -32,7 +32,8 @@ internal sealed class PostgresTimetableFixture : IAsyncDisposable, ITenantContex
     [
         "20260921120000_AddParallelSubjectGroupFoundation",
         "20260921150000_AddParallelTimetableOccurrence",
-        "20260922100000_AddTimetableVersions"
+        "20260922100000_AddTimetableVersions",
+        "20260924124545_AddFeeStructureStudentAssignments"
     ];
     private readonly string databaseName = "school_timetable_test_" + Guid.NewGuid().ToString("N");
     private readonly string adminConnection;
@@ -75,7 +76,7 @@ internal sealed class PostgresTimetableFixture : IAsyncDisposable, ITenantContex
         }
         await using var db = Open();
         Assert.True(db.Database.IsNpgsql());
-        Assert.Equal(FeatureMigrations, db.Database.GetMigrations().TakeLast(3));
+        Assert.Equal(FeatureMigrations, db.Database.GetMigrations().TakeLast(FeatureMigrations.Length));
         await db.GetService<IMigrator>().MigrateAsync(baseline ? Baseline : null);
         var tenant = new Tenant("Timetable fixture", TenantSlug);
         TenantId = tenant.Id;

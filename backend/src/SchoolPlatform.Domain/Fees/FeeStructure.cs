@@ -78,4 +78,35 @@ public sealed class FeeStructure : TenantEntity
 
     public ICollection<FeeStructureLine> Lines { get; private set; }
         = new List<FeeStructureLine>();
+
+    public void UpdateDetails(
+        string name,
+        string audienceType,
+        Guid? audienceId)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Fee structure name is required.");
+        }
+
+        var audience = new[] { "School", "Level", "Class" }
+            .FirstOrDefault(x => string.Equals(
+                x,
+                audienceType,
+                StringComparison.OrdinalIgnoreCase));
+
+        if (audience is null)
+        {
+            throw new ArgumentException("Audience must be School, Level or Class.");
+        }
+
+        if (audience != "School" && !audienceId.HasValue)
+        {
+            throw new ArgumentException("A level or class must be selected.");
+        }
+
+        Name = name.Trim();
+        AudienceType = audience;
+        AudienceId = audience == "School" ? null : audienceId;
+    }
 }

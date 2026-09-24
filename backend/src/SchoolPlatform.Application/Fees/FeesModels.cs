@@ -17,6 +17,21 @@ public sealed record CreateFeeStructureRequest(
     Guid? AudienceId,
     IReadOnlyCollection<CreateFeeStructureLineRequest> Lines);
 
+public sealed record UpdateFeeStructureLineRequest(
+    Guid? Id,
+    Guid FeeItemId,
+    decimal Amount,
+    bool IsRequired);
+
+public sealed record UpdateFeeStructureRequest(
+    string Name,
+    string AudienceType,
+    Guid? AudienceId,
+    IReadOnlyCollection<UpdateFeeStructureLineRequest> Lines);
+
+public sealed record ReplaceFeeStructureStudentsRequest(
+    IReadOnlyCollection<Guid> StudentIds);
+
 public sealed record CreateStudentChargeRequest(
     Guid AcademicTermId,
     Guid FeeItemId,
@@ -56,6 +71,13 @@ public sealed record FeeStructureResult(
     string AudienceName,
     decimal TotalRequiredAmount,
     IReadOnlyCollection<FeeStructureLineResult> Lines);
+
+public sealed record FeeStructureStudentResult(
+    Guid StudentId,
+    string StudentName,
+    string AdmissionNumber,
+    string? ClassName,
+    DateTime AssignedAtUtc);
 
 public sealed record GenerateChargesResult(
     Guid FeeStructureId,
@@ -112,7 +134,8 @@ public sealed record FeesOptionResult(
 public sealed record FeesStudentOptionResult(
     Guid Id,
     string Name,
-    string AdmissionNumber);
+    string AdmissionNumber,
+    string? ClassName);
 
 public sealed record FeesSetupResult(
     object? CurrentSession,

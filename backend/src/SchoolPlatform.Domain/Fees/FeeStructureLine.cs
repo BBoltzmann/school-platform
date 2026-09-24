@@ -39,4 +39,20 @@ public sealed class FeeStructureLine : TenantEntity
     public FeeStructure FeeStructure { get; private set; } = null!;
 
     public FeeItem FeeItem { get; private set; } = null!;
+
+    public void Update(
+        Guid feeItemId,
+        decimal amount,
+        bool isRequired)
+    {
+        if (amount <= 0)
+        {
+            throw new ArgumentException(
+                "Fee amount must be greater than zero.");
+        }
+
+        FeeItemId = feeItemId;
+        Amount = amount;
+        IsRequired = isRequired;
+    }
 }

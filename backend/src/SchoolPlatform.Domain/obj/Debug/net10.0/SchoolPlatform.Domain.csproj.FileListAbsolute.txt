@@ -1,0 +1,12 @@
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/bin/Debug/net10.0/SchoolPlatform.Domain.deps.json
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/bin/Debug/net10.0/SchoolPlatform.Domain.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/bin/Debug/net10.0/SchoolPlatform.Domain.pdb
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/obj/Debug/net10.0/SchoolPlatform.Domain.GeneratedMSBuildEditorConfig.editorconfig
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/obj/Debug/net10.0/SchoolPlatform.Domain.AssemblyInfoInputs.cache
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/obj/Debug/net10.0/SchoolPlatform.Domain.AssemblyInfo.cs
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/obj/Debug/net10.0/SchoolPlatform.Domain.csproj.CoreCompileInputs.cache
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/obj/Debug/net10.0/SchoolPlatform.Domain.sourcelink.json
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/obj/Debug/net10.0/SchoolPlatform.Domain.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/obj/Debug/net10.0/refint/SchoolPlatform.Domain.dll
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/obj/Debug/net10.0/SchoolPlatform.Domain.pdb
+/Users/cedriccampbell/dev/school-platform/backend/src/SchoolPlatform.Domain/obj/Debug/net10.0/ref/SchoolPlatform.Domain.dll

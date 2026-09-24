@@ -7,6 +7,15 @@ export type FeesStudentOption = {
   id: string;
   name: string;
   admissionNumber: string;
+  className: string | null;
+};
+
+export type FeeStructureStudent = {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string | null;
+  assignedAtUtc: string;
 };
 
 export type FeeItem = {

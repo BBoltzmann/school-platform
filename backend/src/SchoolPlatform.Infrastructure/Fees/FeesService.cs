@@ -113,7 +113,18 @@ public sealed class FeesService : IFeesService
                         x.FirstName +
                         " " +
                         x.LastName,
-                        x.AdmissionNumber))
+                        x.AdmissionNumber,
+                        x.Enrollments
+                            .Where(enrollment =>
+                                enrollment.TenantId == tenantId &&
+                                enrollment.IsCurrent &&
+                                enrollment.IsActive &&
+                                enrollment.AcademicSessionId == session.Id)
+                            .Select(enrollment =>
+                                enrollment.ClassGroup.AcademicLevel.Name +
+                                " — " +
+                                enrollment.ClassGroup.Name)
+                            .FirstOrDefault()))
                 .ToListAsync(
                     cancellationToken);
 
@@ -289,6 +300,281 @@ public sealed class FeesService : IFeesService
             cancellationToken);
     }
 
+    public async Task<FeeStructureResult> UpdateStructureAsync(
+        Guid feeStructureId,
+        UpdateFeeStructureRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var structure = await _database.FeeStructures
+            .Include(x => x.Lines)
+                .ThenInclude(x => x.FeeItem)
+            .SingleOrDefaultAsync(x =>
+                x.Id == feeStructureId &&
+                x.TenantId == tenantId &&
+                x.IsActive,
+                cancellationToken)
+            ?? throw new InvalidOperationException("Fee structure was not found.");
+
+        await ValidateAudienceAsync(
+            tenantId,
+            request.AudienceType,
+            request.AudienceId,
+            cancellationToken);
+
+        if (request.Lines.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "A fee structure must contain at least one fee item.");
+        }
+
+        var duplicate = request.Lines
+            .GroupBy(x => x.FeeItemId)
+            .FirstOrDefault(x => x.Count() > 1);
+
+        if (duplicate is not null)
+        {
+            throw new InvalidOperationException(
+                "The same fee item cannot appear twice.");
+        }
+
+        var feeItemIds = request.Lines
+            .Select(x => x.FeeItemId)
+            .Distinct()
+            .ToList();
+
+        var validFeeItems = await _database.FeeItems
+            .Where(x =>
+                x.TenantId == tenantId &&
+                x.IsActive &&
+                feeItemIds.Contains(x.Id))
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        if (validFeeItems.Count != feeItemIds.Count)
+        {
+            throw new InvalidOperationException(
+                "One or more fee items were not found.");
+        }
+
+        var requestedExistingIds = request.Lines
+            .Where(x => x.Id.HasValue)
+            .Select(x => x.Id!.Value)
+            .ToHashSet();
+
+        var unknownLineId = requestedExistingIds
+            .Except(structure.Lines.Select(x => x.Id))
+            .FirstOrDefault();
+
+        if (unknownLineId != Guid.Empty)
+        {
+            throw new InvalidOperationException(
+                "One or more fee structure lines were not found.");
+        }
+
+        foreach (var existingLine in structure.Lines.ToList())
+        {
+            if (requestedExistingIds.Contains(existingLine.Id))
+            {
+                continue;
+            }
+
+            var hasCharges = await _database.StudentFeeCharges.AnyAsync(
+                x =>
+                    x.TenantId == tenantId &&
+                    x.FeeStructureLineId == existingLine.Id,
+                cancellationToken);
+
+            if (hasCharges)
+            {
+                throw new InvalidOperationException(
+                    $"{existingLine.FeeItem.Name} cannot be removed because charges already exist for it. Add a new fee item instead; historical charges are preserved.");
+            }
+
+            _database.FeeStructureLines.Remove(existingLine);
+        }
+
+        foreach (var requestedLine in request.Lines)
+        {
+            if (requestedLine.Id is Guid lineId)
+            {
+                var existingLine = structure.Lines.Single(x => x.Id == lineId);
+                var hasCharges = await _database.StudentFeeCharges.AnyAsync(
+                    x =>
+                        x.TenantId == tenantId &&
+                        x.FeeStructureLineId == lineId,
+                    cancellationToken);
+
+                if (hasCharges && existingLine.FeeItemId != requestedLine.FeeItemId)
+                {
+                    throw new InvalidOperationException(
+                        $"{existingLine.FeeItem.Name} cannot be changed because charges already exist for it.");
+                }
+
+                existingLine.Update(
+                    requestedLine.FeeItemId,
+                    requestedLine.Amount,
+                    requestedLine.IsRequired);
+            }
+            else
+            {
+                _database.FeeStructureLines.Add(
+                    new FeeStructureLine(
+                        tenantId,
+                        structure.Id,
+                        requestedLine.FeeItemId,
+                        requestedLine.Amount,
+                        requestedLine.IsRequired));
+            }
+        }
+
+        structure.UpdateDetails(
+            request.Name,
+            request.AudienceType,
+            request.AudienceId);
+
+        await _database.SaveChangesAsync(cancellationToken);
+
+        return await GetStructureAsync(
+            structure.Id,
+            tenantId,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<FeeStructureStudentResult>>
+        GetAssignedStudentsAsync(
+            Guid feeStructureId,
+            CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+
+        await EnsureStructureAsync(
+            feeStructureId,
+            tenantId,
+            cancellationToken);
+
+        return await _database.FeeStructureStudentAssignments
+            .AsNoTracking()
+            .Where(x =>
+                x.TenantId == tenantId &&
+                x.FeeStructureId == feeStructureId &&
+                x.Student.TenantId == tenantId &&
+                x.Student.IsActive)
+            .OrderBy(x => x.Student.LastName)
+            .ThenBy(x => x.Student.FirstName)
+            .Select(x => new FeeStructureStudentResult(
+                x.StudentId,
+                x.Student.FirstName + " " + x.Student.LastName,
+                x.Student.AdmissionNumber,
+                x.Student.Enrollments
+                    .Where(enrollment =>
+                        enrollment.TenantId == tenantId &&
+                        enrollment.IsCurrent &&
+                        enrollment.IsActive &&
+                        enrollment.AcademicSessionId == x.FeeStructure.AcademicSessionId)
+                    .Select(enrollment =>
+                        enrollment.ClassGroup.AcademicLevel.Name +
+                        " — " +
+                        enrollment.ClassGroup.Name)
+                    .FirstOrDefault(),
+                x.AssignedAtUtc))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<FeeStructureStudentResult>>
+        ReplaceAssignedStudentsAsync(
+            Guid feeStructureId,
+            ReplaceFeeStructureStudentsRequest request,
+            CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+
+        var structure = await EnsureStructureAsync(
+            feeStructureId,
+            tenantId,
+            cancellationToken);
+
+        var studentIds = request.StudentIds
+            .Distinct()
+            .ToList();
+
+        var students = await _database.Students
+            .Where(x =>
+                studentIds.Contains(x.Id) &&
+                x.TenantId == tenantId &&
+                x.IsActive)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        if (students.Count != studentIds.Count)
+        {
+            throw new InvalidOperationException(
+                "One or more selected students were not found in this school.");
+        }
+
+        var existing = await _database.FeeStructureStudentAssignments
+            .Where(x =>
+                x.TenantId == tenantId &&
+                x.FeeStructureId == feeStructureId)
+            .ToListAsync(cancellationToken);
+
+        if (existing.Count > 0 && studentIds.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "This structure is using explicit student assignments. Keep at least one student assigned; clearing all assignments would restore its broad audience targeting.");
+        }
+
+        var desired = studentIds.ToHashSet();
+
+        _database.FeeStructureStudentAssignments.RemoveRange(
+            existing.Where(x => !desired.Contains(x.StudentId)));
+
+        var existingIds = existing
+            .Select(x => x.StudentId)
+            .ToHashSet();
+
+        foreach (var studentId in studentIds.Where(x => !existingIds.Contains(x)))
+        {
+            _database.FeeStructureStudentAssignments.Add(
+                new FeeStructureStudentAssignment(
+                    tenantId,
+                    structure.Id,
+                    studentId));
+        }
+
+        await _database.SaveChangesAsync(cancellationToken);
+
+        return await GetAssignedStudentsAsync(
+            feeStructureId,
+            cancellationToken);
+    }
+
+    public async Task RemoveStudentAssignmentAsync(
+        Guid feeStructureId,
+        Guid studentId,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+
+        await EnsureStructureAsync(
+            feeStructureId,
+            tenantId,
+            cancellationToken);
+
+        var assignment = await _database.FeeStructureStudentAssignments
+            .SingleOrDefaultAsync(x =>
+                x.TenantId == tenantId &&
+                x.FeeStructureId == feeStructureId &&
+                x.StudentId == studentId,
+                cancellationToken);
+
+        if (assignment is not null)
+        {
+            _database.FeeStructureStudentAssignments.Remove(assignment);
+            await _database.SaveChangesAsync(cancellationToken);
+        }
+    }
+
     public async Task<GenerateChargesResult> GenerateChargesAsync(
         Guid feeStructureId,
         CancellationToken cancellationToken = default)
@@ -311,39 +597,54 @@ public sealed class FeesService : IFeesService
             ?? throw new InvalidOperationException(
                 "Fee structure was not found.");
 
-        var enrollmentQuery =
-            _database.StudentEnrollments
+        var assignmentCount = await _database.FeeStructureStudentAssignments
+            .CountAsync(x =>
+                x.TenantId == tenantId &&
+                x.FeeStructureId == structure.Id,
+                cancellationToken);
+
+        List<Guid> studentIds;
+
+        if (assignmentCount > 0)
+        {
+            studentIds = await _database.FeeStructureStudentAssignments
                 .AsNoTracking()
                 .Where(x =>
                     x.TenantId == tenantId &&
-                    x.AcademicSessionId ==
-                        structure.AcademicSessionId &&
+                    x.FeeStructureId == structure.Id &&
+                    x.Student.TenantId == tenantId &&
+                    x.Student.IsActive)
+                .Select(x => x.StudentId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            var enrollmentQuery = _database.StudentEnrollments
+                .AsNoTracking()
+                .Where(x =>
+                    x.TenantId == tenantId &&
+                    x.AcademicSessionId == structure.AcademicSessionId &&
                     x.IsCurrent &&
                     x.IsActive &&
                     x.Student.IsActive);
 
-        if (structure.AudienceType == "Level")
-        {
-            enrollmentQuery =
-                enrollmentQuery.Where(x =>
-                    x.ClassGroup.AcademicLevelId ==
-                        structure.AudienceId);
-        }
-        else if (
-            structure.AudienceType == "Class")
-        {
-            enrollmentQuery =
-                enrollmentQuery.Where(x =>
-                    x.ClassGroupId ==
-                        structure.AudienceId);
-        }
+            if (structure.AudienceType == "Level")
+            {
+                enrollmentQuery = enrollmentQuery.Where(x =>
+                    x.ClassGroup.AcademicLevelId == structure.AudienceId);
+            }
+            else if (structure.AudienceType == "Class")
+            {
+                enrollmentQuery = enrollmentQuery.Where(x =>
+                    x.ClassGroupId == structure.AudienceId);
+            }
 
-        var studentIds =
-            await enrollmentQuery
+            studentIds = await enrollmentQuery
                 .Select(x => x.StudentId)
                 .Distinct()
-                .ToListAsync(
-                    cancellationToken);
+                .ToListAsync(cancellationToken);
+        }
 
         var requiredLines =
             structure.Lines
@@ -1066,6 +1367,21 @@ public sealed class FeesService : IFeesService
                 ? id
                 : throw new InvalidOperationException(
                     "A current academic session is required.");
+    }
+
+    private async Task<FeeStructure> EnsureStructureAsync(
+        Guid feeStructureId,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        return await _database.FeeStructures
+            .SingleOrDefaultAsync(x =>
+                x.Id == feeStructureId &&
+                x.TenantId == tenantId &&
+                x.IsActive,
+                cancellationToken)
+            ?? throw new InvalidOperationException(
+                "Fee structure was not found.");
     }
 
     private async Task ValidateTermAsync(

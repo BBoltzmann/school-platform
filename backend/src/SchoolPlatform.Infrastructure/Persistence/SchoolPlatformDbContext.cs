@@ -176,6 +176,10 @@ public sealed class SchoolPlatformDbContext : DbContext
         FeeStructureLines
         => Set<SchoolPlatform.Domain.Fees.FeeStructureLine>();
 
+    public DbSet<SchoolPlatform.Domain.Fees.FeeStructureStudentAssignment>
+        FeeStructureStudentAssignments
+        => Set<SchoolPlatform.Domain.Fees.FeeStructureStudentAssignment>();
+
     public DbSet<SchoolPlatform.Domain.Fees.StudentFeeCharge>
         StudentFeeCharges
         => Set<SchoolPlatform.Domain.Fees.StudentFeeCharge>();

@@ -44,8 +44,18 @@ export async function GET(
     );
   }
 
-  const result =
-    await response.json();
+  const body = await response.text();
+  let result: unknown;
+
+  try {
+    result = body ? JSON.parse(body) : {
+      error: `Outstanding fees service returned HTTP ${response.status}.`,
+    };
+  } catch {
+    result = {
+      error: "Outstanding fees service returned an invalid response.",
+    };
+  }
 
   return NextResponse.json(
     result,

@@ -31,3 +31,31 @@ test("parallel groups use persisted ClassSubject ids and controlled checkboxes",
   assert.match(source, /setGroupSelected/);
   assert.match(source, /Save Subjects Offered before configuring a parallel group/);
 });
+
+test("fee structures expose authenticated student assignment workflow", () => {
+  const workspace = read("components/fees/fee-structures-workspace.tsx");
+  const route = read("app/api/fees/structures/[structureId]/students/route.ts");
+  const removeRoute = read("app/api/fees/structures/[structureId]/students/[studentId]/route.ts");
+
+  assert.match(workspace, /Manage Students/);
+  assert.match(workspace, /Save Student Assignments/);
+  assert.match(workspace, /studentSearch/);
+  assert.match(workspace, /studentClassFilter/);
+  assert.match(workspace, /studentIds/);
+  assert.match(route, /authenticatedBackendFetch/);
+  assert.match(route, /export async function GET/);
+  assert.match(route, /export async function PUT/);
+  assert.match(removeRoute, /export async function DELETE/);
+});
+
+test("fee structure management exposes editable templates and safe generation review", () => {
+  const workspace = read("components/fees/fee-structures-workspace.tsx");
+  const structureRoute = read("app/api/fees/structures/[structureId]/route.ts");
+
+  assert.match(workspace, /Manage Structure/);
+  assert.match(workspace, /Fee Components/);
+  assert.match(workspace, /Save Structure Changes/);
+  assert.match(workspace, /Generate charges for/);
+  assert.match(workspace, /Existing charges and payments remain unchanged/);
+  assert.match(structureRoute, /export async function PUT/);
+});
