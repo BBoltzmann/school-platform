@@ -292,6 +292,22 @@ public sealed class TimetablePlanningService
                 .ToListAsync(
                     cancellationToken);
 
+        var parallelGroups = await _database.ParallelSubjectGroups
+            .AsNoTracking()
+            .Where(x =>
+                x.TenantId == tenantId &&
+                x.ClassGroupId == classGroupId &&
+                x.AcademicSessionId == session.Id &&
+                x.IsActive)
+            .Select(x => x.Members
+                .Select(member => member.ClassSubject.SubjectId)
+                .ToList())
+            .ToListAsync(cancellationToken);
+
+        var capacity = ParallelTimetableCapacity.Calculate(
+            requirements.ToDictionary(x => x.SubjectId, x => x.PeriodsPerWeek),
+            parallelGroups);
+
         return new ClassSubjectRequirementsResult(
             classGroup.Id,
             classGroup.Name,
@@ -299,8 +315,9 @@ public sealed class TimetablePlanningService
             classGroup.AcademicLevelName,
             session.Id,
             session.Name,
-            requirements.Sum(x =>
-                x.PeriodsPerWeek),
+            capacity.Raw,
+            capacity.Effective,
+            capacity.Savings,
             requirements);
     }
 

@@ -28,4 +28,5 @@ public interface IParallelSubjectGroupService
     Task<ParallelSubjectGroupResult> CreateAsync(Guid classGroupId, SaveParallelSubjectGroupRequest request, CancellationToken cancellationToken = default);
     Task<ParallelSubjectGroupResult> UpdateAsync(Guid classGroupId, Guid groupId, SaveParallelSubjectGroupRequest request, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid classGroupId, Guid groupId, CancellationToken cancellationToken = default);
+    Task ResetAsync(Guid classGroupId, Guid academicSessionId, CancellationToken cancellationToken = default);
 }

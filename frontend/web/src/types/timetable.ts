@@ -68,6 +68,8 @@ export type ClassSubjectRequirements = {
   academicSessionId: string;
   academicSessionName: string;
   totalPeriodsPerWeek: number;
+  effectiveTimetablePeriods: number;
+  parallelSavings: number;
   requirements: ClassSubjectRequirement[];
 };
 

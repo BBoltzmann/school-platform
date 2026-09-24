@@ -61,6 +61,44 @@ public sealed class ParallelSubjectGroupService(
         await database.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task ResetAsync(Guid classGroupId, Guid academicSessionId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantContext.TenantId;
+        await EnsureClassAndSessionAsync(classGroupId, academicSessionId, cancellationToken);
+
+        var groups = await database.ParallelSubjectGroups
+            .Include(x => x.Members)
+            .Where(x =>
+                x.TenantId == tenantId &&
+                x.ClassGroupId == classGroupId &&
+                x.AcademicSessionId == academicSessionId &&
+                x.IsActive)
+            .ToListAsync(cancellationToken);
+
+        if (groups.Count == 0)
+        {
+            return;
+        }
+
+        if (await database.GeneratedTimetableEntries.AnyAsync(
+                x =>
+                    x.TenantId == tenantId &&
+                    groups.Select(group => group.Id).Contains(x.ParallelSubjectGroupId!.Value),
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "These parallel groups are used by a generated timetable. Reset the generated timetable before clearing them.");
+        }
+
+        database.ParallelSubjectGroupMembers.RemoveRange(groups.SelectMany(x => x.Members));
+        foreach (var group in groups)
+        {
+            group.Deactivate();
+        }
+
+        await database.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task<List<SchoolPlatform.Domain.Academics.ClassSubject>> ValidateMembersAsync(Guid classGroupId, SaveParallelSubjectGroupRequest request, Guid? currentGroupId, CancellationToken cancellationToken)
     {
         var ids = request.ClassSubjectIds.Distinct().ToArray();

@@ -59,3 +59,16 @@ test("fee structure management exposes editable templates and safe generation re
   assert.match(workspace, /Existing charges and payments remain unchanged/);
   assert.match(structureRoute, /export async function PUT/);
 });
+
+test("parallel group management and effective timetable capacity are visible", () => {
+  const groups = read("components/academics/class-subject-actions.tsx");
+  const requirements = read("components/timetable/class-subject-requirements-editor.tsx");
+  const resetRoute = read("app/api/academics/classes/[id]/parallel-subject-groups/reset/route.ts");
+
+  assert.match(groups, /Configured groups/);
+  assert.match(groups, /Reset Parallel Groups/);
+  assert.match(groups, /Delete/);
+  assert.match(resetRoute, /authenticatedBackendFetch/);
+  assert.match(requirements, /Parallel savings/);
+  assert.match(requirements, /Timetable periods required/);
+});

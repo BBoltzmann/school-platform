@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
+using SchoolPlatform.Application.Academics;
 using SchoolPlatform.Application.Timetabling;
 using SchoolPlatform.Domain.Academics;
 using SchoolPlatform.Domain.Tenancy;
@@ -13,6 +14,41 @@ namespace SchoolPlatform.IntegrationTests;
 
 public sealed class PostgresTimetableTests
 {
+    [PostgresTimetableFact]
+    public async Task ParallelGroupsAreListedDeletedAndResetWithoutRemovingOfferings()
+    {
+        await using var fixture = new PostgresTimetableFixture();
+        await fixture.InitializeAsync(members: 2);
+        await using var db = fixture.Open();
+        var service = new SchoolPlatform.Infrastructure.Academics.ParallelSubjectGroupService(db, fixture);
+
+        var listed = await service.ListAsync(fixture.ClassId, fixture.SessionId);
+        Assert.Single(listed);
+        Assert.Equal(2, listed.Single().Members.Count);
+
+        await service.DeleteAsync(fixture.ClassId, fixture.GroupId!.Value);
+        Assert.Empty(await service.ListAsync(fixture.ClassId, fixture.SessionId));
+
+        var offerings = await db.ClassSubjects
+            .Where(x => x.ClassGroupId == fixture.ClassId)
+            .CountAsync();
+        Assert.Equal(2, offerings);
+
+        var replacement = await service.CreateAsync(
+            fixture.ClassId,
+            new SaveParallelSubjectGroupRequest(
+                fixture.SessionId,
+                "Replacement",
+                await db.ClassSubjects
+                    .Where(x => x.ClassGroupId == fixture.ClassId)
+                    .Select(x => x.Id)
+                    .ToListAsync()));
+        Assert.Equal("Replacement", replacement.DisplayName);
+
+        await service.ResetAsync(fixture.ClassId, fixture.SessionId);
+        Assert.Empty(await service.ListAsync(fixture.ClassId, fixture.SessionId));
+        Assert.Equal(offerings, await db.ClassSubjects.CountAsync(x => x.ClassGroupId == fixture.ClassId));
+    }
     [PostgresTimetableFact]
     public async Task MigrationPreservesRowsAcrossAllThreeFeatureMigrations()
     {

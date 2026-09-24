@@ -281,16 +281,14 @@ public sealed class TimetableReadinessService
                         $"{classGroup.AcademicLevelName} — {classGroup.Name} has no weekly subject requirements."));
             }
 
-            var groupedSubjects = parallelGroups
-                .Where(g => g.ClassGroupId == classGroup.Id)
-                .SelectMany(g => g.Members)
-                .ToHashSet();
-            var classPeriodTotal = classRequirements
-                .Where(x => !groupedSubjects.Contains(x.SubjectId))
-                .Sum(x => x.PeriodsPerWeek)
-                + parallelGroups.Where(g => g.ClassGroupId == classGroup.Id)
-                    .Select(g => classRequirements.Where(r => g.Members.Contains(r.SubjectId)).Select(r => r.PeriodsPerWeek).DefaultIfEmpty(0).Max())
-                    .Sum();
+            var classCapacity = ParallelTimetableCapacity.Calculate(
+                classRequirements.ToDictionary(
+                    x => x.SubjectId,
+                    x => x.PeriodsPerWeek),
+                parallelGroups
+                    .Where(g => g.ClassGroupId == classGroup.Id)
+                    .Select(g => (IReadOnlyCollection<Guid>)g.Members));
+            var classPeriodTotal = classCapacity.Effective;
 
             if (weeklyCapacity > 0 &&
                 classPeriodTotal >

@@ -45,6 +45,8 @@ export function ClassSubjectRequirementsEditor({
     Record<string, number>
   >({});
 
+  const [parallelSavings, setParallelSavings] = useState(0);
+
   const [loading, setLoading] =
     useState(false);
 
@@ -88,10 +90,17 @@ export function ClassSubjectRequirementsEditor({
     weeklyCapacity === null
       ? null
       : weeklyCapacity -
-        totalAllocated;
+        Math.max(0, totalAllocated - parallelSavings);
+
+  const effectiveTimetablePeriods = Math.max(
+    0,
+    totalAllocated - parallelSavings
+  );
 
   useEffect(() => {
     if (!classGroupId) {
+      // Clear the editor when the selected class is cleared.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPeriods({});
       return;
     }
@@ -153,6 +162,9 @@ export function ClassSubjectRequirementsEditor({
         }
 
         setPeriods(loaded);
+        setParallelSavings(
+          (result as ClassSubjectRequirements).parallelSavings ?? 0
+        );
       } catch (exception) {
         if (!cancelled) {
           setError(
@@ -261,6 +273,8 @@ export function ClassSubjectRequirementsEditor({
         return;
       }
 
+      setParallelSavings((result as ClassSubjectRequirements).parallelSavings ?? 0);
+
       setSuccess(
         "Weekly subject requirements saved."
       );
@@ -346,19 +360,27 @@ export function ClassSubjectRequirementsEditor({
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <div className="rounded-lg border p-3">
-              <div className="text-xs text-muted-foreground">
-                Allocated
-              </div>
+              <div className="text-xs text-muted-foreground">Subject periods</div>
 
               <div className="mt-1 text-xl font-bold">
                 {totalAllocated}
               </div>
 
-              <div className="text-xs text-muted-foreground">
-                periods/week
-              </div>
+              <div className="text-xs text-muted-foreground">raw periods/week</div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-muted-foreground">Parallel savings</div>
+              <div className="mt-1 text-xl font-bold">{parallelSavings}</div>
+              <div className="text-xs text-muted-foreground">shared slots saved</div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-muted-foreground">Timetable periods required</div>
+              <div className="mt-1 text-xl font-bold">{effectiveTimetablePeriods}</div>
+              <div className="text-xs text-muted-foreground">effective class slots</div>
             </div>
 
             <div className="rounded-lg border p-3">

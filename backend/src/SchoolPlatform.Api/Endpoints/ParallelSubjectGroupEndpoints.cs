@@ -34,5 +34,12 @@ public static class ParallelSubjectGroupEndpoints
             try { await service.DeleteAsync(classGroupId, groupId, ct); return Results.NoContent(); }
             catch (InvalidOperationException ex) { return Results.NotFound(new { error = ex.Message }); }
         }).RequireAuthorization();
+
+        app.MapPost("/api/academics/classes/{classGroupId:guid}/parallel-subject-groups/reset", async (Guid classGroupId, Guid academicSessionId, IParallelSubjectGroupService service, ICurrentUserContext user, CancellationToken ct) =>
+        {
+            if (!user.HasPermission("academics.configure")) return Results.Forbid();
+            try { await service.ResetAsync(classGroupId, academicSessionId, ct); return Results.NoContent(); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        }).RequireAuthorization();
     }
 }

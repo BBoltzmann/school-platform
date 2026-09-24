@@ -247,7 +247,12 @@ public sealed class TimetableGenerationService
             }).ToList();
             if (members.Any(x => x.Requirement is null || x.Assignment is null))
                 throw new InvalidOperationException($"{group.DisplayName ?? "Parallel subject group"} has a missing weekly requirement or teacher assignment.");
-            var requiredPeriods = members[0].Requirement!.PeriodsPerWeek;
+            var memberPeriods = members.ToDictionary(
+                x => x.Requirement!.SubjectId,
+                x => x.Requirement!.PeriodsPerWeek);
+            var requiredPeriods = ParallelTimetableCapacity.Calculate(
+                memberPeriods,
+                new IReadOnlyCollection<Guid>[] { memberPeriods.Keys.ToArray() }).Effective;
             if (members.Any(x => x.Requirement!.PeriodsPerWeek != requiredPeriods))
                 throw new InvalidOperationException("Subjects in a parallel group must have matching weekly period requirements.");
             var periodsRemaining = requiredPeriods;

@@ -53,6 +53,8 @@ public sealed record ClassSubjectRequirementsResult(
     Guid AcademicSessionId,
     string AcademicSessionName,
     int TotalPeriodsPerWeek,
+    int EffectiveTimetablePeriods,
+    int ParallelSavings,
     IReadOnlyCollection<ClassSubjectRequirementResult> Requirements);
 
 public sealed record ClassSubjectRequirementResult(
