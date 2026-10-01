@@ -597,111 +597,169 @@ public sealed class FeesService : IFeesService
             ?? throw new InvalidOperationException(
                 "Fee structure was not found.");
 
-        var assignmentCount = await _database.FeeStructureStudentAssignments
-            .CountAsync(x =>
+        // The selected structure determines the affected population. Existing
+        // charges from this structure are included so removing an assignment
+        // can deactivate obsolete unpaid charges during the same sync.
+        var selectedTargetIds = await GetStructureTargetStudentIdsAsync(
+            structure,
+            tenantId,
+            cancellationToken);
+        var historicalTargetIds = await _database.StudentFeeCharges
+            .AsNoTracking()
+            .Where(x =>
                 x.TenantId == tenantId &&
-                x.FeeStructureId == structure.Id,
-                cancellationToken);
+                x.AcademicTermId == structure.AcademicTermId &&
+                x.FeeStructureId == structure.Id &&
+                x.IsActive)
+            .Select(x => x.StudentId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var studentIds = selectedTargetIds
+            .Concat(historicalTargetIds)
+            .Distinct()
+            .ToList();
 
-        List<Guid> studentIds;
+        var structures = await _database.FeeStructures
+            .AsNoTracking()
+            .Where(x =>
+                x.TenantId == tenantId &&
+                x.AcademicSessionId == structure.AcademicSessionId &&
+                x.AcademicTermId == structure.AcademicTermId &&
+                x.IsActive)
+            .Include(x => x.Lines)
+                .ThenInclude(x => x.FeeItem)
+            .ToListAsync(cancellationToken);
+        var structureIds = structures.Select(x => x.Id).ToArray();
+        var assignments = await _database.FeeStructureStudentAssignments
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && structureIds.Contains(x.FeeStructureId))
+            .Select(x => new { x.FeeStructureId, x.StudentId })
+            .ToListAsync(cancellationToken);
+        var assignmentLookup = assignments
+            .GroupBy(x => x.FeeStructureId)
+            .ToDictionary(x => x.Key, x => x.Select(v => v.StudentId).ToHashSet());
+        var enrollments = await _database.StudentEnrollments
+            .AsNoTracking()
+            .Where(x =>
+                x.TenantId == tenantId &&
+                x.AcademicSessionId == structure.AcademicSessionId &&
+                studentIds.Contains(x.StudentId) &&
+                x.IsCurrent && x.IsActive && x.Student.IsActive)
+            .Select(x => new { x.StudentId, x.ClassGroupId, x.ClassGroup.AcademicLevelId })
+            .ToListAsync(cancellationToken);
 
-        if (assignmentCount > 0)
-        {
-            studentIds = await _database.FeeStructureStudentAssignments
-                .AsNoTracking()
-                .Where(x =>
-                    x.TenantId == tenantId &&
-                    x.FeeStructureId == structure.Id &&
-                    x.Student.TenantId == tenantId &&
-                    x.Student.IsActive)
-                .Select(x => x.StudentId)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-        }
-        else
-        {
-            var enrollmentQuery = _database.StudentEnrollments
-                .AsNoTracking()
-                .Where(x =>
-                    x.TenantId == tenantId &&
-                    x.AcademicSessionId == structure.AcademicSessionId &&
-                    x.IsCurrent &&
-                    x.IsActive &&
-                    x.Student.IsActive);
-
-            if (structure.AudienceType == "Level")
-            {
-                enrollmentQuery = enrollmentQuery.Where(x =>
-                    x.ClassGroup.AcademicLevelId == structure.AudienceId);
-            }
-            else if (structure.AudienceType == "Class")
-            {
-                enrollmentQuery = enrollmentQuery.Where(x =>
-                    x.ClassGroupId == structure.AudienceId);
-            }
-
-            studentIds = await enrollmentQuery
-                .Select(x => x.StudentId)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-        }
-
-        var requiredLines =
-            structure.Lines
-                .Where(x =>
-                    x.IsRequired)
-                .ToList();
-
-        var created = 0;
-        decimal total = 0m;
-
+        var expected = new Dictionary<Guid, List<(Guid StructureId, FeeStructureLine Line)>>();
         foreach (var studentId in studentIds)
         {
-            foreach (var line in requiredLines)
+            var studentEnrollments = enrollments.Where(x => x.StudentId == studentId).ToList();
+            foreach (var candidate in structures)
             {
-                var exists =
-                    await _database.StudentFeeCharges
-                        .AnyAsync(
-                            x =>
-                                x.TenantId == tenantId &&
-                                x.StudentId == studentId &&
-                                x.AcademicTermId ==
-                                    structure.AcademicTermId &&
-                                x.FeeStructureLineId ==
-                                    line.Id &&
-                                x.IsActive,
-                            cancellationToken);
-
-                if (exists)
+                var assigned = assignmentLookup.GetValueOrDefault(candidate.Id);
+                var applicable = assigned is { Count: > 0 }
+                    ? assigned.Contains(studentId)
+                    : candidate.AudienceType switch
+                    {
+                        "School" => studentEnrollments.Count > 0,
+                        "Level" => studentEnrollments.Any(x => x.AcademicLevelId == candidate.AudienceId),
+                        "Class" => studentEnrollments.Any(x => x.ClassGroupId == candidate.AudienceId),
+                        _ => false,
+                    };
+                if (!applicable) continue;
+                foreach (var line in candidate.Lines.Where(x => x.IsRequired))
                 {
+                    if (!expected.TryGetValue(studentId, out var lines))
+                        expected[studentId] = lines = [];
+                    lines.Add((candidate.Id, line));
+                }
+            }
+        }
+
+        var activeCharges = await _database.StudentFeeCharges
+            .Where(x =>
+                x.TenantId == tenantId &&
+                studentIds.Contains(x.StudentId) &&
+                x.AcademicTermId == structure.AcademicTermId &&
+                x.IsActive &&
+                x.FeeStructureId.HasValue &&
+                x.FeeStructureLineId.HasValue)
+            .ToListAsync(cancellationToken);
+        var chargeIds = activeCharges.Select(x => x.Id).ToArray();
+        var allocatedChargeIds = (await _database.FeePaymentAllocations
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && chargeIds.Contains(x.StudentFeeChargeId))
+            .Select(x => x.StudentFeeChargeId)
+            .Distinct()
+            .ToListAsync(cancellationToken)).ToHashSet();
+
+        var created = 0;
+        var retained = 0;
+        var deactivated = 0;
+        var protectedCharges = new List<ProtectedFeeChargeResult>();
+        decimal total = 0m;
+        foreach (var studentId in studentIds)
+        {
+            var expectedLines = expected.GetValueOrDefault(studentId, []);
+            var studentCharges = activeCharges.Where(x => x.StudentId == studentId).ToList();
+            var expectedKeys = expectedLines
+                .Select(x => (x.StructureId, LineId: x.Line.Id))
+                .ToHashSet();
+            var retainedKeys = new HashSet<(Guid StructureId, Guid LineId)>();
+            foreach (var charge in studentCharges)
+            {
+                var key = (charge.FeeStructureId!.Value, charge.FeeStructureLineId!.Value);
+                if (expectedKeys.Contains(key) && retainedKeys.Add(key))
+                {
+                    retained++;
                     continue;
                 }
-
-                _database.StudentFeeCharges.Add(
-                    new StudentFeeCharge(
-                        tenantId,
-                        studentId,
-                        structure.AcademicSessionId,
-                        structure.AcademicTermId,
-                        line.FeeItemId,
-                        structure.Id,
-                        line.Id,
-                        line.FeeItem.Name,
-                        line.Amount));
-
+                if (charge.AmountPaid == 0m && !allocatedChargeIds.Contains(charge.Id))
+                {
+                    charge.Deactivate();
+                    deactivated++;
+                }
+                else
+                {
+                    protectedCharges.Add(new ProtectedFeeChargeResult(
+                        charge.Id, charge.StudentId, charge.Description, charge.Amount, charge.AmountPaid));
+                }
+            }
+            foreach (var (structureId, line) in expectedLines)
+            {
+                if (retainedKeys.Contains((structureId, line.Id))) continue;
+                _database.StudentFeeCharges.Add(new StudentFeeCharge(
+                    tenantId, studentId, structure.AcademicSessionId, structure.AcademicTermId,
+                    line.FeeItemId, structureId, line.Id, line.FeeItem.Name, line.Amount));
+                retainedKeys.Add((structureId, line.Id));
                 created++;
                 total += line.Amount;
             }
         }
 
-        await _database.SaveChangesAsync(
-            cancellationToken);
-
+        await _database.SaveChangesAsync(cancellationToken);
         return new GenerateChargesResult(
-            structure.Id,
-            studentIds.Count,
-            created,
-            total);
+            structure.Id, studentIds.Count, created, total, retained,
+            deactivated, protectedCharges.Count, protectedCharges);
+    }
+
+    private async Task<List<Guid>> GetStructureTargetStudentIdsAsync(
+        FeeStructure structure,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        var assigned = await _database.FeeStructureStudentAssignments
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.FeeStructureId == structure.Id && x.Student.IsActive)
+            .Select(x => x.StudentId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        if (assigned.Count > 0) return assigned;
+
+        var query = _database.StudentEnrollments.AsNoTracking().Where(x =>
+            x.TenantId == tenantId && x.AcademicSessionId == structure.AcademicSessionId &&
+            x.IsCurrent && x.IsActive && x.Student.IsActive);
+        if (structure.AudienceType == "Level") query = query.Where(x => x.ClassGroup.AcademicLevelId == structure.AudienceId);
+        else if (structure.AudienceType == "Class") query = query.Where(x => x.ClassGroupId == structure.AudienceId);
+        return await query.Select(x => x.StudentId).Distinct().ToListAsync(cancellationToken);
     }
 
     public async Task<StudentFeeChargeResult> CreateStudentChargeAsync(

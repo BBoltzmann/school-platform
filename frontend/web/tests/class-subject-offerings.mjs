@@ -57,8 +57,8 @@ test("fee structure management exposes editable templates and safe generation re
   assert.match(workspace, /Manage Structure/);
   assert.match(workspace, /Fee Components/);
   assert.match(workspace, /Save Structure Changes/);
-  assert.match(workspace, /Generate charges for/);
-  assert.match(workspace, /Existing charges and payments remain unchanged/);
+  assert.match(workspace, /Generate \/ sync fees for/);
+  assert.match(workspace, /paid charges and payment history are preserved/);
   assert.match(structureRoute, /export async function PUT/);
 });
 

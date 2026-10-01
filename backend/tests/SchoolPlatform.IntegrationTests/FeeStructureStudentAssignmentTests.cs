@@ -115,7 +115,7 @@ public sealed class FeeStructureStudentAssignmentTests
 
         var generated = await service.GenerateChargesAsync(assignedStructure.Id);
         Assert.Equal(2, generated.StudentCount);
-        Assert.Equal(2, generated.ChargesCreated);
+        Assert.Equal(5, generated.ChargesCreated);
 
         var repeated = await service.GenerateChargesAsync(assignedStructure.Id);
         Assert.Equal(0, repeated.ChargesCreated);
@@ -123,16 +123,39 @@ public sealed class FeeStructureStudentAssignmentTests
         await service.RemoveStudentAssignmentAsync(
             assignedStructure.Id,
             students[1].Id);
-        Assert.Equal(2, await database.StudentFeeCharges.CountAsync(
-            x => x.FeeStructureId == assignedStructure.Id));
+        var synchronized = await service.GenerateChargesAsync(assignedStructure.Id);
+        Assert.Equal(1, synchronized.DeactivatedCount);
+        Assert.Equal(1, await database.StudentFeeCharges.CountAsync(
+            x => x.FeeStructureId == assignedStructure.Id && x.IsActive));
 
         var secondGenerated = await service.GenerateChargesAsync(secondStructure.Id);
         Assert.Equal(1, secondGenerated.StudentCount);
-        Assert.Equal(1, secondGenerated.ChargesCreated);
+        Assert.Equal(0, secondGenerated.ChargesCreated);
 
         var legacyGenerated = await service.GenerateChargesAsync(legacyStructure.Id);
         Assert.Equal(3, legacyGenerated.StudentCount);
-        Assert.Equal(3, legacyGenerated.ChargesCreated);
+        Assert.Equal(1, legacyGenerated.ChargesCreated);
+
+        var legacyLine = await database.FeeStructureLines
+            .SingleAsync(x => x.FeeStructureId == legacyStructure.Id);
+        var chidiLegacyCharge = await database.StudentFeeCharges
+            .SingleAsync(x =>
+                x.StudentId == students[2].Id &&
+                x.FeeStructureId == legacyStructure.Id &&
+                x.FeeStructureLineId == legacyLine.Id &&
+                x.IsActive);
+        Assert.Equal(students[2].Id, chidiLegacyCharge.StudentId);
+        Assert.Equal(legacyStructure.Id, chidiLegacyCharge.FeeStructureId);
+        Assert.Equal(legacyLine.Id, chidiLegacyCharge.FeeStructureLineId);
+        Assert.Equal(tuition.Id, chidiLegacyCharge.FeeItemId);
+        Assert.Equal(90m, chidiLegacyCharge.Amount);
+        Assert.True(chidiLegacyCharge.IsActive);
+        Assert.Equal(3, await database.StudentFeeCharges.CountAsync(
+            x => x.FeeStructureId == legacyStructure.Id && x.IsActive));
+
+        var repeatedLegacy = await service.GenerateChargesAsync(legacyStructure.Id);
+        Assert.Equal(0, repeatedLegacy.ChargesCreated);
+        Assert.Equal(0, repeatedLegacy.DeactivatedCount);
 
         var assignedLine = await database.FeeStructureLines
             .SingleAsync(x => x.FeeStructureId == assignedStructure.Id);
@@ -153,10 +176,11 @@ public sealed class FeeStructureStudentAssignmentTests
 
         Assert.Equal("Selected students updated", updated.Name);
         Assert.Equal(120m, updated.TotalRequiredAmount);
-        Assert.Equal(200m, await database.StudentFeeCharges
+        Assert.Equal(100m, await database.StudentFeeCharges
             .Where(x => x.FeeStructureId == assignedStructure.Id)
+            .Where(x => x.IsActive)
             .Select(x => x.Amount)
-            .SumAsync());
+            .SingleAsync());
 
         var clearException = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.ReplaceAssignedStudentsAsync(

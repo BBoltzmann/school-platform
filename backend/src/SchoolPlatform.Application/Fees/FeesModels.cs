@@ -83,7 +83,18 @@ public sealed record GenerateChargesResult(
     Guid FeeStructureId,
     int StudentCount,
     int ChargesCreated,
-    decimal TotalAmountGenerated);
+    decimal TotalAmountGenerated,
+    int RetainedCount = 0,
+    int DeactivatedCount = 0,
+    int ProtectedCount = 0,
+    IReadOnlyCollection<ProtectedFeeChargeResult>? ProtectedCharges = null);
+
+public sealed record ProtectedFeeChargeResult(
+    Guid ChargeId,
+    Guid StudentId,
+    string Description,
+    decimal Amount,
+    decimal AmountPaid);
 
 public sealed record StudentFeeChargeResult(
     Guid Id,

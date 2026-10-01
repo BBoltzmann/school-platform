@@ -71,6 +71,11 @@ public sealed class StudentFeeCharge : TenantEntity
     public decimal Balance =>
         Math.Max(Amount - AmountPaid, 0m);
 
+    public void Deactivate()
+    {
+        IsActive = false;
+    }
+
     public void ApplyPayment(decimal amount)
     {
         if (amount <= 0)

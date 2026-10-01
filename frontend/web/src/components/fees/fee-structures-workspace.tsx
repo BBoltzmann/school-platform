@@ -320,7 +320,7 @@ export function FeeStructuresWorkspace({
       ?? structure.academicTermId;
     const confirmed = window.confirm(
       [
-        `Generate charges for ${structure.name}?`,
+        `Generate / sync fees for ${structure.name}?`,
         `Term: ${termName}`,
         `Fee components: ${structure.lines.length}`,
         `Amount per student: ${currency(structure.totalRequiredAmount)}`,
@@ -357,7 +357,7 @@ export function FeeStructuresWorkspace({
       }
 
       setNotice(
-        `${result.chargesCreated} charges generated for ${result.studentCount} students.`
+        `Fees synchronised successfully — ${result.chargesCreated ?? 0} created, ${result.deactivatedCount ?? 0} obsolete charges removed, ${result.protectedCount ?? 0} protected.`
       );
     } catch (exception) {
       setError(
@@ -1033,7 +1033,7 @@ export function FeeStructuresWorkspace({
                     disabled={saving}
                   >
                     <Users className="mr-2 h-4 w-4" />
-                    Generate Student Charges
+                    Generate / Sync Fees
                   </Button>
                 </div>
               )
@@ -1120,7 +1120,7 @@ export function FeeStructuresWorkspace({
           {activeView === "structure" && <div className="border-b py-4">
             <h3 className="font-medium">Edit Structure Template</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              Changes apply to future charge generation only. Existing charges and payments remain unchanged.
+              Changes are applied when fees are generated/synchronised. Unpaid obsolete charges may be removed from active billing; paid charges and payment history are preserved.
             </p>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <Field label="Structure name">
