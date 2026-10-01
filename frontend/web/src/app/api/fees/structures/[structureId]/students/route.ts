@@ -48,12 +48,23 @@ async function proxy(
     );
   }
 
+  const body = await response.text();
   let result: unknown = {};
 
-  try {
-    result = await response.json();
-  } catch {
-    result = { error: "The fee service returned an invalid response." };
+  if (body.trim()) {
+    try {
+      result = JSON.parse(body);
+    } catch {
+      result = {
+        error: response.ok
+          ? "The fee service returned an invalid response."
+          : `Fee service request failed (${response.status}).`,
+      };
+    }
+  } else if (!response.ok) {
+    result = {
+      error: `Fee service request failed (${response.status}).`,
+    };
   }
 
   return NextResponse.json(result, {

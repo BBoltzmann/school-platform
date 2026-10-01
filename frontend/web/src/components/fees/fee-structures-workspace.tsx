@@ -10,6 +10,7 @@ import {
   ReceiptText,
   Search,
   Users,
+  ArrowLeft,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,7 @@ export function FeeStructuresWorkspace({
 
   const [selectedStructure, setSelectedStructure] =
     useState<FeeStructure | null>(null);
+  const [activeView, setActiveView] = useState<"list" | "structure" | "students">("list");
 
   const [assignedStudents, setAssignedStudents] =
     useState<FeeStructureStudent[]>([]);
@@ -368,8 +370,9 @@ export function FeeStructuresWorkspace({
     }
   }
 
-  async function openAssignments(structure: FeeStructure) {
+  async function openStructure(structure: FeeStructure, view: "structure" | "students") {
     setSelectedStructure(structure);
+    setActiveView(view);
     setEditingName(structure.name);
     setEditingAudienceType(structure.audienceType);
     setEditingAudienceId(structure.audienceId ?? "");
@@ -396,6 +399,14 @@ export function FeeStructuresWorkspace({
         throw new Error(result.error ?? "Unable to load assigned students.");
       }
 
+      if (!Array.isArray(result)) {
+        throw new Error(
+          typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "The fee service did not confirm the saved student assignments."
+        );
+      }
+
       const assignments = result as FeeStructureStudent[];
       setAssignedStudents(assignments);
       setSelectedStudentIds(assignments.map(student => student.studentId));
@@ -408,6 +419,14 @@ export function FeeStructuresWorkspace({
     } finally {
       setLoadingAssignments(false);
     }
+  }
+
+  function closeStructure() {
+    if (saving) return;
+    setSelectedStructure(null);
+    setActiveView("list");
+    setError(null);
+    setNotice(null);
   }
 
   async function saveStructure() {
@@ -505,6 +524,14 @@ export function FeeStructuresWorkspace({
         throw new Error(result.error ?? "Unable to save student assignments.");
       }
 
+      if (!Array.isArray(result)) {
+        throw new Error(
+          typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "The fee service did not confirm the saved student assignments."
+        );
+      }
+
       const assignments = result as FeeStructureStudent[];
       setAssignedStudents(assignments);
       setSelectedStudentIds(assignments.map(student => student.studentId));
@@ -554,6 +581,7 @@ export function FeeStructuresWorkspace({
         </Message>
       )}
 
+      {activeView === "list" && <>
       <section className="rounded-xl border bg-card p-5">
         <h2 className="font-semibold">
           Fee Items
@@ -598,8 +626,9 @@ export function FeeStructuresWorkspace({
           ))}
         </div>
       </section>
+      </>}
 
-      <section className="rounded-xl border bg-card">
+      {activeView === "list" && <section className="rounded-xl border bg-card">
         <div className="border-b p-5">
           <h2 className="font-semibold">
             New Fee Structure
@@ -926,9 +955,9 @@ export function FeeStructuresWorkspace({
             Save Fee Structure
           </Button>
         </div>
-      </section>
+      </section>}
 
-      <section className="rounded-xl border bg-card">
+      {activeView === "list" && <section className="rounded-xl border bg-card">
         <div className="border-b p-5">
           <h2 className="font-semibold">
             Existing Fee Structures
@@ -978,7 +1007,7 @@ export function FeeStructuresWorkspace({
 
                   <Button
                     variant="outline"
-                    onClick={() => openAssignments(structure)}
+                    onClick={() => openStructure(structure, "structure")}
                     disabled={saving}
                   >
                     <ReceiptText className="mr-2 h-4 w-4" />
@@ -987,7 +1016,7 @@ export function FeeStructuresWorkspace({
 
                   <Button
                     variant="outline"
-                    onClick={() => openAssignments(structure)}
+                    onClick={() => openStructure(structure, "students")}
                     disabled={saving}
                   >
                     <Users className="mr-2 h-4 w-4" />
@@ -1011,21 +1040,27 @@ export function FeeStructuresWorkspace({
             )}
           </div>
         )}
-      </section>
+      </section>}
 
-      {selectedStructure && (
+      {selectedStructure && activeView !== "list" && (
         <section className="rounded-xl border bg-card p-5">
           <div className="flex flex-col gap-3 border-b pb-4 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="font-semibold">
-                Assign Students: {selectedStructure.name}
+                {activeView === "structure" ? "Manage Structure" : "Manage Students"}: {selectedStructure.name}
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
                 {selectedStructure.audienceName} audience · Explicit assignments override audience targeting when at least one student is assigned.
               </p>
             </div>
-            <div className="rounded-full bg-muted px-3 py-1 text-sm">
-              {assignedStudents.length} assigned
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-muted px-3 py-1 text-sm">
+                {assignedStudents.length} assigned
+              </div>
+              <Button type="button" variant="ghost" onClick={closeStructure}>
+                <ArrowLeft className="mr-1 h-4 w-4" />
+                Back to Fee Structures
+              </Button>
             </div>
           </div>
 
@@ -1053,7 +1088,7 @@ export function FeeStructuresWorkspace({
             </div>
           </div>
 
-          <div className="border-b py-4">
+          {activeView === "structure" && <div className="border-b py-4">
             <h3 className="font-medium">Fee Components</h3>
             <div className="mt-2 overflow-x-auto rounded-lg border">
               <table className="w-full text-sm">
@@ -1080,9 +1115,9 @@ export function FeeStructuresWorkspace({
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
-          <div className="border-b py-4">
+          {activeView === "structure" && <div className="border-b py-4">
             <h3 className="font-medium">Edit Structure Template</h3>
             <p className="mt-1 text-xs text-muted-foreground">
               Changes apply to future charge generation only. Existing charges and payments remain unchanged.
@@ -1195,9 +1230,9 @@ export function FeeStructuresWorkspace({
                 Save Structure Changes
               </Button>
             </div>
-          </div>
+          </div>}
 
-          {loadingAssignments ? (
+          {activeView === "students" && (loadingAssignments ? (
             <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
               <LoaderCircle className="h-4 w-4 animate-spin" />
               Loading assignments…
@@ -1293,7 +1328,7 @@ export function FeeStructuresWorkspace({
                 </span>
               </div>
             </>
-          )}
+          ))}
         </section>
       )}
     </div>
