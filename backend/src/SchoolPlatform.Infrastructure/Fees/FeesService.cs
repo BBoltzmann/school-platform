@@ -840,6 +840,16 @@ public sealed class FeesService : IFeesService
                 .ToListAsync(
                     cancellationToken);
 
+        var structureIds = charges
+            .Where(x => x.FeeStructureId.HasValue)
+            .Select(x => x.FeeStructureId!.Value)
+            .Distinct()
+            .ToArray();
+        var structureNames = await _database.FeeStructures
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && structureIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
         var payments =
             await _database.FeePayments
                 .AsNoTracking()
@@ -892,7 +902,10 @@ public sealed class FeesService : IFeesService
                 .Select(x =>
                     ToChargeResult(
                         x,
-                        x.FeeItem.Name))
+                        x.FeeItem.Name,
+                        x.FeeStructureId.HasValue
+                            ? structureNames.GetValueOrDefault(x.FeeStructureId.Value)
+                            : null))
                 .ToList(),
             payments
                 .Select(x =>
@@ -1617,11 +1630,15 @@ public sealed class FeesService : IFeesService
 
     private static StudentFeeChargeResult ToChargeResult(
         StudentFeeCharge charge,
-        string feeItemName)
+        string feeItemName,
+        string? feeStructureName = null)
     {
         return new StudentFeeChargeResult(
             charge.Id,
             charge.FeeItemId,
+            charge.FeeStructureId,
+            charge.FeeStructureLineId,
+            feeStructureName,
             feeItemName,
             charge.Description,
             charge.Amount,

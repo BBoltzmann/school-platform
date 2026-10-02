@@ -26,6 +26,9 @@ type Account = {
   creditBalance: number;
   charges: {
     id: string;
+    feeStructureId: string | null;
+    feeStructureLineId: string | null;
+    feeStructureName: string | null;
     feeItemName: string;
     description: string;
     amount: number;
@@ -289,6 +292,9 @@ export function StudentAccountsWorkspace({
                     <th className="px-4 py-3">
                       Charge
                     </th>
+                    <th className="px-4 py-3">
+                      Fee Structure
+                    </th>
                     <th className="px-4 py-3 text-right">
                       Amount
                     </th>
@@ -313,6 +319,15 @@ export function StudentAccountsWorkspace({
                           {
                             charge.description
                           }
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span className="rounded-full border px-2 py-1 text-xs">
+                            {charge.feeStructureName ??
+                              (charge.feeStructureId
+                                ? "Legacy / Unlinked"
+                                : "Manual charge")}
+                          </span>
                         </td>
 
                         <td className="px-4 py-3 text-right">

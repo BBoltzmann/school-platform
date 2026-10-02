@@ -99,6 +99,9 @@ public sealed record ProtectedFeeChargeResult(
 public sealed record StudentFeeChargeResult(
     Guid Id,
     Guid FeeItemId,
+    Guid? FeeStructureId,
+    Guid? FeeStructureLineId,
+    string? FeeStructureName,
     string FeeItemName,
     string Description,
     decimal Amount,

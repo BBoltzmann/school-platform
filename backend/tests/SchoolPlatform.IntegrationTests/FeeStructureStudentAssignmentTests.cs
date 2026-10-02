@@ -117,6 +117,32 @@ public sealed class FeeStructureStudentAssignmentTests
         Assert.Equal(2, generated.StudentCount);
         Assert.Equal(3, generated.ChargesCreated);
 
+        var assignedAccount = await service.GetStudentAccountAsync(
+            students[0].Id,
+            term.Id);
+        Assert.Contains(assignedAccount.Charges, x =>
+            x.FeeItemName == "Tuition" &&
+            x.FeeStructureId == assignedStructure.Id &&
+            x.FeeStructureName == assignedStructure.Name);
+        Assert.Contains(assignedAccount.Charges, x =>
+            x.FeeItemName == "Transport" &&
+            x.FeeStructureId == secondStructure.Id &&
+            x.FeeStructureName == secondStructure.Name);
+
+        await service.CreateStudentChargeAsync(
+            students[0].Id,
+            new CreateStudentChargeRequest(
+                term.Id,
+                tuition.Id,
+                "Manual adjustment",
+                5m));
+        var accountWithManualCharge = await service.GetStudentAccountAsync(
+            students[0].Id,
+            term.Id);
+        var manualCharge = Assert.Single(accountWithManualCharge.Charges.Where(x => x.Description == "Manual adjustment"));
+        Assert.Null(manualCharge.FeeStructureId);
+        Assert.Null(manualCharge.FeeStructureName);
+
         var repeated = await service.GenerateChargesAsync(assignedStructure.Id);
         Assert.Equal(0, repeated.ChargesCreated);
 
@@ -126,17 +152,6 @@ public sealed class FeeStructureStudentAssignmentTests
         var synchronized = await service.GenerateChargesAsync(assignedStructure.Id);
         Assert.Equal(1, synchronized.DeactivatedCount);
         Assert.Equal(1, await database.StudentFeeCharges.CountAsync(
-            x => x.FeeStructureId == assignedStructure.Id && x.IsActive));
-
-        await service.RemoveStudentAssignmentAsync(
-            assignedStructure.Id,
-            students[0].Id);
-        Assert.Empty(await service.GetAssignedStudentsAsync(assignedStructure.Id));
-        var emptySync = await service.GenerateChargesAsync(assignedStructure.Id);
-        Assert.Equal(0, emptySync.StudentCount);
-        Assert.Equal(0, emptySync.ChargesCreated);
-        Assert.Equal(1, emptySync.DeactivatedCount);
-        Assert.Equal(0, await database.StudentFeeCharges.CountAsync(
             x => x.FeeStructureId == assignedStructure.Id && x.IsActive));
 
         var secondGenerated = await service.GenerateChargesAsync(secondStructure.Id);
@@ -149,9 +164,35 @@ public sealed class FeeStructureStudentAssignmentTests
         Assert.Equal(0, await database.StudentFeeCharges.CountAsync(
             x => x.FeeStructureId == legacyStructure.Id && x.IsActive));
 
+        await service.ReplaceAssignedStudentsAsync(
+            legacyStructure.Id,
+            new([students[0].Id]));
+        var legacyAssigned = await service.GenerateChargesAsync(legacyStructure.Id);
+        Assert.Equal(1, legacyAssigned.ChargesCreated);
+        var accountWithTwoTuitionStructures = await service.GetStudentAccountAsync(
+            students[0].Id,
+            term.Id);
+        var tuitionSources = accountWithTwoTuitionStructures.Charges
+            .Where(x => x.FeeItemName == "Tuition" && x.FeeStructureId.HasValue)
+            .Select(x => x.FeeStructureName)
+            .ToHashSet();
+        Assert.Contains(assignedStructure.Name, tuitionSources);
+        Assert.Contains(legacyStructure.Name, tuitionSources);
+
         var repeatedLegacy = await service.GenerateChargesAsync(legacyStructure.Id);
         Assert.Equal(0, repeatedLegacy.ChargesCreated);
         Assert.Equal(0, repeatedLegacy.DeactivatedCount);
+
+        await service.RemoveStudentAssignmentAsync(
+            assignedStructure.Id,
+            students[0].Id);
+        Assert.Empty(await service.GetAssignedStudentsAsync(assignedStructure.Id));
+        var emptySync = await service.GenerateChargesAsync(assignedStructure.Id);
+        Assert.Equal(0, emptySync.StudentCount);
+        Assert.Equal(0, emptySync.ChargesCreated);
+        Assert.Equal(1, emptySync.DeactivatedCount);
+        Assert.Equal(0, await database.StudentFeeCharges.CountAsync(
+            x => x.FeeStructureId == assignedStructure.Id && x.IsActive));
 
         var assignedLine = await database.FeeStructureLines
             .SingleAsync(x => x.FeeStructureId == assignedStructure.Id);
