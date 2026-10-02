@@ -11,6 +11,7 @@ import {
   Search,
   Users,
   ArrowLeft,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -313,9 +314,7 @@ export function FeeStructuresWorkspace({
       }
     }
 
-    const targeting = assignmentCount > 0
-      ? `Explicit students (${assignmentCount})`
-      : structure.audienceName;
+    const targeting = `Explicit students (${assignmentCount})`;
     const termName = setup.terms.find(term => term.id === structure.academicTermId)?.name
       ?? structure.academicTermId;
     const confirmed = window.confirm(
@@ -325,9 +324,7 @@ export function FeeStructuresWorkspace({
         `Fee components: ${structure.lines.length}`,
         `Amount per student: ${currency(structure.totalRequiredAmount)}`,
         `Targeting: ${targeting}`,
-        assignmentCount === 0
-          ? "Students targeted: based on the structure audience"
-          : `Students targeted: ${assignmentCount}`,
+        `Students targeted: ${assignmentCount}`,
       ].join("\n")
     );
 
@@ -549,6 +546,39 @@ export function FeeStructuresWorkspace({
     }
   }
 
+  async function removeAssignment(student: FeeStructureStudent) {
+    if (!selectedStructure) return;
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `/api/fees/structures/${selectedStructure.id}/students/${student.studentId}`,
+        { method: "DELETE" }
+      );
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error ?? "Unable to remove student assignment.");
+      }
+
+      const refreshed = await fetch(
+        `/api/fees/structures/${selectedStructure.id}/students`
+      );
+      const assignments = await refreshed.json();
+      if (!refreshed.ok || !Array.isArray(assignments)) {
+        throw new Error(assignments.error ?? "Unable to refresh assigned students.");
+      }
+      setAssignedStudents(assignments);
+      setSelectedStudentIds(assignments.map((item: FeeStructureStudent) => item.studentId));
+      setNotice(`${student.studentName} was removed from this fee structure. Run Generate / Sync Fees to reconcile unpaid generated charges.`);
+    } catch (exception) {
+      setError(exception instanceof Error ? exception.message : "Unable to remove student assignment.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const classOptions = Array.from(
     new Set(
       setup.students
@@ -564,7 +594,8 @@ export function FeeStructuresWorkspace({
       student.admissionNumber.toLowerCase().includes(query);
     const matchesClass = !studentClassFilter ||
       student.className === studentClassFilter;
-    return matchesSearch && matchesClass;
+    const alreadyAssigned = assignedStudents.some(assigned => assigned.studentId === student.id);
+    return matchesSearch && matchesClass && !alreadyAssigned;
   });
 
   return (
@@ -1050,7 +1081,7 @@ export function FeeStructuresWorkspace({
                 {activeView === "structure" ? "Manage Structure" : "Manage Students"}: {selectedStructure.name}
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                {selectedStructure.audienceName} audience · Explicit assignments override audience targeting when at least one student is assigned.
+                {selectedStructure.audienceName} audience · Charges are generated only for explicitly assigned students.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -1239,6 +1270,40 @@ export function FeeStructuresWorkspace({
             </div>
           ) : (
             <>
+              <div className="border-b py-4">
+                <h3 className="font-medium">Assigned Students ({assignedStudents.length})</h3>
+                {assignedStudents.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">No students are explicitly assigned to this structure.</p>
+                ) : (
+                  <div className="mt-3 divide-y rounded-lg border">
+                    {assignedStudents.map(student => (
+                      <div key={student.studentId} className="flex items-center gap-3 p-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium">{student.studentName}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {student.admissionNumber}{student.className ? ` · ${student.className}` : ""}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label={`Remove ${student.studentName}`}
+                          onClick={() => removeAssignment(student)}
+                          disabled={saving}
+                        >
+                          <X className="mr-1 h-4 w-4" />
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4">
+                <h3 className="font-medium">Add Students</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Search below to add students to this fee structure.</p>
+              </div>
               <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
                 <Field label="Search students">
                   <div className="relative">

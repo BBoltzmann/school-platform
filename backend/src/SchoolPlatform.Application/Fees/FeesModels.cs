@@ -136,7 +136,8 @@ public sealed record OutstandingStudentResult(
     string StudentName,
     decimal TotalCharges,
     decimal TotalPaid,
-    decimal OutstandingBalance);
+    decimal OutstandingBalance,
+    string? ClassName = null);
 
 public sealed record FeesOptionResult(
     Guid Id,

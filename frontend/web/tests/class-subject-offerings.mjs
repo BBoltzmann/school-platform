@@ -62,6 +62,22 @@ test("fee structure management exposes editable templates and safe generation re
   assert.match(structureRoute, /export async function PUT/);
 });
 
+test("fee management exposes assigned-student removal and account filters", () => {
+  const structures = read("components/fees/fee-structures-workspace.tsx");
+  const accounts = read("components/fees/student-accounts-workspace.tsx");
+  const outstanding = read("components/fees/outstanding-fees-workspace.tsx");
+
+  assert.match(structures, /Assigned Students/);
+  assert.match(structures, /method: "DELETE"/);
+  assert.match(structures, /Run Generate \/ Sync Fees to reconcile unpaid generated charges/);
+  assert.match(structures, /Remove \$\{student\.studentName\}/);
+  assert.match(accounts, /All classes/);
+  assert.match(accounts, /classFilter/);
+  assert.match(outstanding, /Search student/);
+  assert.match(outstanding, /All classes/);
+  assert.match(outstanding, /row\.className/);
+});
+
 test("parallel group management and effective timetable capacity are visible", () => {
   const groups = read("components/academics/class-subject-actions.tsx");
   const requirements = read("components/timetable/class-subject-requirements-editor.tsx");

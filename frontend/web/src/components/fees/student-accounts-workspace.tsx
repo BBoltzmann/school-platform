@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useState,
 } from "react";
 import {
@@ -65,6 +66,8 @@ export function StudentAccountsWorkspace({
       ""
   );
 
+  const [classFilter, setClassFilter] = useState("");
+
   const [account, setAccount] =
     useState<Account | null>(
       null
@@ -116,10 +119,27 @@ export function StudentAccountsWorkspace({
     }
   }
 
+  const classOptions = Array.from(new Set(
+    setup.students
+      .map(student => student.className)
+      .filter((value): value is string => Boolean(value))
+  )).sort();
+  const filteredStudents = setup.students.filter(student =>
+    !classFilter || student.className === classFilter
+  );
+
+  useEffect(() => {
+    if (filteredStudents.length > 0 && !filteredStudents.some(student => student.id === studentId)) {
+      // Keep the selected account inside the active class filter.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStudentId(filteredStudents[0].id);
+    }
+  }, [filteredStudents, studentId]);
+
   return (
     <div className="space-y-6">
       <section className="rounded-xl border bg-card p-5">
-        <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+        <div className="grid gap-4 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
           <div>
             <label className="mb-2 block text-sm font-medium">
               Student
@@ -134,7 +154,7 @@ export function StudentAccountsWorkspace({
               }
               className={inputClass}
             >
-              {setup.students.map(
+              {filteredStudents.map(
                 student => (
                   <option
                     key={student.id}
@@ -148,6 +168,20 @@ export function StudentAccountsWorkspace({
                   </option>
                 )
               )}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">Class</label>
+            <select
+              value={classFilter}
+              onChange={event => setClassFilter(event.target.value)}
+              className={inputClass}
+            >
+              <option value="">All classes</option>
+              {classOptions.map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
             </select>
           </div>
 

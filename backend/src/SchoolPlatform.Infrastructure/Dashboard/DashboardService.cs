@@ -56,11 +56,13 @@ public sealed class DashboardService(
                 x.Campus.TenantId == tenantId && x.Campus.IsActive, cancellationToken);
         }
 
-        // Allocations cannot exceed a charge, so distinct students with positive active
-        // charge balances matches the fee service's students-owing semantics, all time.
-        var owing = await database.StudentFeeCharges
-            .Where(x => x.TenantId == tenantId && x.IsActive && x.Amount > x.AmountPaid)
-            .Select(x => x.StudentId).Distinct().CountAsync(cancellationToken);
+        // Keep the dashboard action count aligned with the visible academic context.
+        var owing = term is null
+            ? 0
+            : await database.StudentFeeCharges
+                .Where(x => x.TenantId == tenantId && x.AcademicTermId == term.Id &&
+                    x.IsActive && x.Amount > x.AmountPaid)
+                .Select(x => x.StudentId).Distinct().CountAsync(cancellationToken);
 
         var actions = new List<DashboardActionResult>();
         if (session is null)

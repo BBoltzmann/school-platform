@@ -41,6 +41,9 @@ export function OutstandingFeesWorkspace({
       null
     );
 
+  const [search, setSearch] = useState("");
+  const [classFilter, setClassFilter] = useState("");
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -96,12 +99,26 @@ export function OutstandingFeesWorkspace({
   }, [academicTermId, load]);
 
   const total =
-    rows.reduce(
+    rows.filter(row => {
+      const student = setup.students.find(item => item.id === row.studentId);
+      const query = search.trim().toLowerCase();
+      return (!query || row.studentName.toLowerCase().includes(query) || row.admissionNumber.toLowerCase().includes(query)) &&
+        (!classFilter || student?.className === classFilter);
+    }).reduce(
       (sum, row) =>
         sum +
         row.outstandingBalance,
       0
     );
+  const classOptions = Array.from(new Set(
+    setup.students.map(student => student.className).filter((value): value is string => Boolean(value))
+  )).sort();
+  const filteredRows = rows.filter(row => {
+    const student = setup.students.find(item => item.id === row.studentId);
+    const query = search.trim().toLowerCase();
+    return (!query || row.studentName.toLowerCase().includes(query) || row.admissionNumber.toLowerCase().includes(query)) &&
+      (!classFilter || student?.className === classFilter);
+  });
 
   return (
     <section className="overflow-hidden rounded-xl border bg-card">
@@ -121,28 +138,16 @@ export function OutstandingFeesWorkspace({
           </p>
         </div>
 
-        <select
-          value={
-            academicTermId
-          }
-          onChange={event =>
-            setAcademicTermId(
-              event.target.value
-            )
-          }
-          className="h-10 rounded-md border bg-background px-3 text-sm"
-        >
-          {setup.terms.map(
-            term => (
-              <option
-                key={term.id}
-                value={term.id}
-              >
-                {term.name}
-              </option>
-            )
-          )}
-        </select>
+        <div className="flex flex-wrap gap-2">
+          <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search student" className="h-10 rounded-md border bg-background px-3 text-sm" />
+          <select value={classFilter} onChange={event => setClassFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+            <option value="">All classes</option>
+            {classOptions.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+          <select value={academicTermId} onChange={event => setAcademicTermId(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+            {setup.terms.map(term => <option key={term.id} value={term.id}>{term.name}</option>)}
+          </select>
+        </div>
       </div>
 
       <div className="border-b bg-muted/20 p-5">
@@ -186,7 +191,7 @@ export function OutstandingFeesWorkspace({
             </thead>
 
             <tbody className="divide-y">
-              {rows.map(row => (
+              {filteredRows.map(row => (
                 <tr
                   key={row.studentId}
                 >
@@ -196,9 +201,7 @@ export function OutstandingFeesWorkspace({
                     </div>
 
                     <div className="text-xs text-muted-foreground">
-                      {
-                        row.admissionNumber
-                      }
+                      {row.admissionNumber}{row.className ? ` · ${row.className}` : ""}
                     </div>
                   </td>
 

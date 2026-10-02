@@ -518,12 +518,6 @@ public sealed class FeesService : IFeesService
                 x.FeeStructureId == feeStructureId)
             .ToListAsync(cancellationToken);
 
-        if (existing.Count > 0 && studentIds.Count == 0)
-        {
-            throw new InvalidOperationException(
-                "This structure is using explicit student assignments. Keep at least one student assigned; clearing all assignments would restore its broad audience targeting.");
-        }
-
         var desired = studentIds.ToHashSet();
 
         _database.FeeStructureStudentAssignments.RemoveRange(
@@ -638,32 +632,13 @@ public sealed class FeesService : IFeesService
         var assignmentLookup = assignments
             .GroupBy(x => x.FeeStructureId)
             .ToDictionary(x => x.Key, x => x.Select(v => v.StudentId).ToHashSet());
-        var enrollments = await _database.StudentEnrollments
-            .AsNoTracking()
-            .Where(x =>
-                x.TenantId == tenantId &&
-                x.AcademicSessionId == structure.AcademicSessionId &&
-                studentIds.Contains(x.StudentId) &&
-                x.IsCurrent && x.IsActive && x.Student.IsActive)
-            .Select(x => new { x.StudentId, x.ClassGroupId, x.ClassGroup.AcademicLevelId })
-            .ToListAsync(cancellationToken);
-
         var expected = new Dictionary<Guid, List<(Guid StructureId, FeeStructureLine Line)>>();
         foreach (var studentId in studentIds)
         {
-            var studentEnrollments = enrollments.Where(x => x.StudentId == studentId).ToList();
             foreach (var candidate in structures)
             {
                 var assigned = assignmentLookup.GetValueOrDefault(candidate.Id);
-                var applicable = assigned is { Count: > 0 }
-                    ? assigned.Contains(studentId)
-                    : candidate.AudienceType switch
-                    {
-                        "School" => studentEnrollments.Count > 0,
-                        "Level" => studentEnrollments.Any(x => x.AcademicLevelId == candidate.AudienceId),
-                        "Class" => studentEnrollments.Any(x => x.ClassGroupId == candidate.AudienceId),
-                        _ => false,
-                    };
+                var applicable = assigned?.Contains(studentId) == true;
                 if (!applicable) continue;
                 foreach (var line in candidate.Lines.Where(x => x.IsRequired))
                 {
@@ -737,7 +712,7 @@ public sealed class FeesService : IFeesService
 
         await _database.SaveChangesAsync(cancellationToken);
         return new GenerateChargesResult(
-            structure.Id, studentIds.Count, created, total, retained,
+            structure.Id, selectedTargetIds.Count, created, total, retained,
             deactivated, protectedCharges.Count, protectedCharges);
     }
 
@@ -752,14 +727,7 @@ public sealed class FeesService : IFeesService
             .Select(x => x.StudentId)
             .Distinct()
             .ToListAsync(cancellationToken);
-        if (assigned.Count > 0) return assigned;
-
-        var query = _database.StudentEnrollments.AsNoTracking().Where(x =>
-            x.TenantId == tenantId && x.AcademicSessionId == structure.AcademicSessionId &&
-            x.IsCurrent && x.IsActive && x.Student.IsActive);
-        if (structure.AudienceType == "Level") query = query.Where(x => x.ClassGroup.AcademicLevelId == structure.AudienceId);
-        else if (structure.AudienceType == "Class") query = query.Where(x => x.ClassGroupId == structure.AudienceId);
-        return await query.Select(x => x.StudentId).Distinct().ToListAsync(cancellationToken);
+        return assigned;
     }
 
     public async Task<StudentFeeChargeResult> CreateStudentChargeAsync(
@@ -1126,43 +1094,62 @@ public sealed class FeesService : IFeesService
         var tenantId =
             _tenantContext.TenantId;
 
-        var rows =
-            await _database.StudentFeeCharges
-                .AsNoTracking()
-                .Where(x =>
-                    x.TenantId == tenantId &&
-                    x.AcademicTermId ==
-                        academicTermId &&
-                    x.IsActive)
-                .GroupBy(x => new
-                {
-                    x.StudentId,
-                    x.Student.AdmissionNumber,
-                    x.Student.FirstName,
-                    x.Student.LastName
-                })
-                .Select(group =>
-                    new OutstandingStudentResult(
-                        group.Key.StudentId,
-                        group.Key.AdmissionNumber,
-                        group.Key.FirstName +
-                            " " +
-                            group.Key.LastName,
-                        group.Sum(x =>
-                            x.Amount),
-                        group.Sum(x =>
-                            x.AmountPaid),
-                        group.Sum(x =>
-                            x.Amount -
-                            x.AmountPaid)))
-                .Where(x =>
-                    x.OutstandingBalance > 0)
-                .OrderByDescending(x =>
-                    x.OutstandingBalance)
-                .ToListAsync(
-                    cancellationToken);
+        var sessionId = await _database.AcademicTerms
+            .Where(x => x.TenantId == tenantId && x.Id == academicTermId && x.IsActive)
+            .Select(x => x.AcademicSessionId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (sessionId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Academic term was not found.");
+        }
 
-        return rows;
+        var charges = await _database.StudentFeeCharges
+            .AsNoTracking()
+            .Where(x =>
+                x.TenantId == tenantId &&
+                x.AcademicTermId == academicTermId &&
+                x.IsActive)
+            .Select(x => new
+            {
+                x.StudentId,
+                x.Student.AdmissionNumber,
+                StudentName = x.Student.FirstName + " " + x.Student.LastName,
+                x.Amount,
+                x.AmountPaid
+            })
+            .ToListAsync(cancellationToken);
+
+        var studentIds = charges.Select(x => x.StudentId).Distinct().ToArray();
+        var classes = await _database.StudentEnrollments
+            .AsNoTracking()
+            .Where(x =>
+                x.TenantId == tenantId &&
+                studentIds.Contains(x.StudentId) &&
+                x.AcademicSessionId == sessionId &&
+                x.IsCurrent && x.IsActive)
+            .Select(x => new
+            {
+                x.StudentId,
+                ClassName = x.ClassGroup.AcademicLevel.Name + " — " + x.ClassGroup.Name
+            })
+            .ToListAsync(cancellationToken);
+        var classByStudent = classes
+            .GroupBy(x => x.StudentId)
+            .ToDictionary(x => x.Key, x => x.Select(v => v.ClassName).FirstOrDefault());
+
+        return charges
+            .GroupBy(x => new { x.StudentId, x.AdmissionNumber, x.StudentName })
+            .Select(group => new OutstandingStudentResult(
+                group.Key.StudentId,
+                group.Key.AdmissionNumber,
+                group.Key.StudentName,
+                group.Sum(x => x.Amount),
+                group.Sum(x => x.AmountPaid),
+                group.Sum(x => x.Amount - x.AmountPaid),
+                classByStudent.GetValueOrDefault(group.Key.StudentId)))
+            .Where(x => x.OutstandingBalance > 0)
+            .OrderByDescending(x => x.OutstandingBalance)
+            .ToList();
     }
 
     public async Task<FeesOverviewResult> GetOverviewAsync(

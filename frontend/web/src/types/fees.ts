@@ -65,6 +65,7 @@ export type OutstandingStudent = {
   totalCharges: number;
   totalPaid: number;
   outstandingBalance: number;
+  className: string | null;
 };
 
 export type RecentFeePayment = {

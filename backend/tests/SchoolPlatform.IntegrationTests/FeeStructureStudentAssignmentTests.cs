@@ -115,7 +115,7 @@ public sealed class FeeStructureStudentAssignmentTests
 
         var generated = await service.GenerateChargesAsync(assignedStructure.Id);
         Assert.Equal(2, generated.StudentCount);
-        Assert.Equal(5, generated.ChargesCreated);
+        Assert.Equal(3, generated.ChargesCreated);
 
         var repeated = await service.GenerateChargesAsync(assignedStructure.Id);
         Assert.Equal(0, repeated.ChargesCreated);
@@ -128,29 +128,25 @@ public sealed class FeeStructureStudentAssignmentTests
         Assert.Equal(1, await database.StudentFeeCharges.CountAsync(
             x => x.FeeStructureId == assignedStructure.Id && x.IsActive));
 
+        await service.RemoveStudentAssignmentAsync(
+            assignedStructure.Id,
+            students[0].Id);
+        Assert.Empty(await service.GetAssignedStudentsAsync(assignedStructure.Id));
+        var emptySync = await service.GenerateChargesAsync(assignedStructure.Id);
+        Assert.Equal(0, emptySync.StudentCount);
+        Assert.Equal(0, emptySync.ChargesCreated);
+        Assert.Equal(1, emptySync.DeactivatedCount);
+        Assert.Equal(0, await database.StudentFeeCharges.CountAsync(
+            x => x.FeeStructureId == assignedStructure.Id && x.IsActive));
+
         var secondGenerated = await service.GenerateChargesAsync(secondStructure.Id);
         Assert.Equal(1, secondGenerated.StudentCount);
         Assert.Equal(0, secondGenerated.ChargesCreated);
 
         var legacyGenerated = await service.GenerateChargesAsync(legacyStructure.Id);
-        Assert.Equal(3, legacyGenerated.StudentCount);
-        Assert.Equal(1, legacyGenerated.ChargesCreated);
-
-        var legacyLine = await database.FeeStructureLines
-            .SingleAsync(x => x.FeeStructureId == legacyStructure.Id);
-        var chidiLegacyCharge = await database.StudentFeeCharges
-            .SingleAsync(x =>
-                x.StudentId == students[2].Id &&
-                x.FeeStructureId == legacyStructure.Id &&
-                x.FeeStructureLineId == legacyLine.Id &&
-                x.IsActive);
-        Assert.Equal(students[2].Id, chidiLegacyCharge.StudentId);
-        Assert.Equal(legacyStructure.Id, chidiLegacyCharge.FeeStructureId);
-        Assert.Equal(legacyLine.Id, chidiLegacyCharge.FeeStructureLineId);
-        Assert.Equal(tuition.Id, chidiLegacyCharge.FeeItemId);
-        Assert.Equal(90m, chidiLegacyCharge.Amount);
-        Assert.True(chidiLegacyCharge.IsActive);
-        Assert.Equal(3, await database.StudentFeeCharges.CountAsync(
+        Assert.Equal(0, legacyGenerated.StudentCount);
+        Assert.Equal(0, legacyGenerated.ChargesCreated);
+        Assert.Equal(0, await database.StudentFeeCharges.CountAsync(
             x => x.FeeStructureId == legacyStructure.Id && x.IsActive));
 
         var repeatedLegacy = await service.GenerateChargesAsync(legacyStructure.Id);
@@ -176,17 +172,20 @@ public sealed class FeeStructureStudentAssignmentTests
 
         Assert.Equal("Selected students updated", updated.Name);
         Assert.Equal(120m, updated.TotalRequiredAmount);
-        Assert.Equal(100m, await database.StudentFeeCharges
+        var historicalAssignedCharges = await database.StudentFeeCharges
             .Where(x => x.FeeStructureId == assignedStructure.Id)
-            .Where(x => x.IsActive)
-            .Select(x => x.Amount)
-            .SingleAsync());
+            .ToListAsync();
+        Assert.Equal(2, historicalAssignedCharges.Count);
+        Assert.All(historicalAssignedCharges, charge =>
+        {
+            Assert.Equal(100m, charge.Amount);
+            Assert.False(charge.IsActive);
+        });
 
-        var clearException = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.ReplaceAssignedStudentsAsync(
-                assignedStructure.Id,
-                new(Array.Empty<Guid>())));
-        Assert.Contains("Keep at least one student assigned", clearException.Message);
+        var cleared = await service.ReplaceAssignedStudentsAsync(
+            assignedStructure.Id,
+            new(Array.Empty<Guid>()));
+        Assert.Empty(cleared);
     }
 
     [PostgresTimetableFact]
