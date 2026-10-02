@@ -78,6 +78,12 @@ test("fee management exposes assigned-student removal and account filters", () =
   assert.match(outstanding, /row\.className/);
 });
 
+test("fee structures expose term reconciliation", () => {
+  assert.match(read("components/fees/fee-structures-workspace.tsx"), /Reconcile Term Fees/);
+  assert.match(read("app/api/fees/terms/[academicTermId]/reconcile/route.ts"), /authenticatedBackendFetch/);
+  assert.match(read("app/api/fees/terms/[academicTermId]/reconcile/route.ts"), /method: "POST"/);
+});
+
 test("parallel group management and effective timetable capacity are visible", () => {
   const groups = read("components/academics/class-subject-actions.tsx");
   const requirements = read("components/timetable/class-subject-requirements-editor.tsx");

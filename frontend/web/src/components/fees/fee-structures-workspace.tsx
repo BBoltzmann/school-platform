@@ -367,6 +367,27 @@ export function FeeStructuresWorkspace({
     }
   }
 
+  async function reconcileTermFees() {
+    if (!academicTermId) return;
+    const termName = setup.terms.find(term => term.id === academicTermId)?.name ?? academicTermId;
+    if (!window.confirm(`Reconcile Term Fees for ${termName}?\n\nUnpaid generated charges that no longer apply will be deactivated. Paid and manual charges will be preserved.`)) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/fees/terms/${academicTermId}/reconcile`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to reconcile term fees.");
+      setNotice(`Term fees reconciled — ${result.chargesCreated ?? 0} created, ${result.chargesDeactivated ?? 0} deactivated, ${result.protectedCharges ?? 0} protected.`);
+    } catch (exception) {
+      setError(exception instanceof Error ? exception.message : "Unable to reconcile term fees.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function openStructure(structure: FeeStructure, view: "structure" | "students") {
     setSelectedStructure(structure);
     setActiveView(view);
@@ -990,9 +1011,12 @@ export function FeeStructuresWorkspace({
 
       {activeView === "list" && <section className="rounded-xl border bg-card">
         <div className="border-b p-5">
-          <h2 className="font-semibold">
-            Existing Fee Structures
-          </h2>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-semibold">Existing Fee Structures</h2>
+            <Button type="button" variant="outline" onClick={reconcileTermFees} disabled={saving || !academicTermId}>
+              Reconcile Term Fees
+            </Button>
+          </div>
         </div>
 
         {structures.length ===

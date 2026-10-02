@@ -716,6 +716,41 @@ public sealed class FeesService : IFeesService
             deactivated, protectedCharges.Count, protectedCharges);
     }
 
+    public async Task<ReconcileTermFeesResult> ReconcileTermFeesAsync(
+        Guid academicTermId,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var termExists = await _database.AcademicTerms.AnyAsync(x =>
+            x.TenantId == tenantId && x.Id == academicTermId && x.IsActive,
+            cancellationToken);
+        if (!termExists)
+        {
+            throw new InvalidOperationException("Academic term was not found.");
+        }
+
+        var structureIds = await _database.FeeStructures
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.AcademicTermId == academicTermId && x.IsActive)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        var summaries = new List<GenerateChargesResult>();
+        foreach (var structureId in structureIds)
+        {
+            summaries.Add(await GenerateChargesAsync(structureId, cancellationToken));
+        }
+
+        return new ReconcileTermFeesResult(
+            academicTermId,
+            structureIds.Count,
+            summaries.Sum(x => x.StudentCount),
+            summaries.Sum(x => x.ChargesCreated),
+            summaries.Sum(x => x.RetainedCount),
+            summaries.Sum(x => x.DeactivatedCount),
+            summaries.Sum(x => x.ProtectedCount));
+    }
+
     private async Task<List<Guid>> GetStructureTargetStudentIdsAsync(
         FeeStructure structure,
         Guid tenantId,

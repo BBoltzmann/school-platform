@@ -42,6 +42,10 @@ public interface IFeesService
         Guid feeStructureId,
         CancellationToken cancellationToken = default);
 
+    Task<ReconcileTermFeesResult> ReconcileTermFeesAsync(
+        Guid academicTermId,
+        CancellationToken cancellationToken = default);
+
     Task<StudentFeeChargeResult> CreateStudentChargeAsync(
         Guid studentId,
         CreateStudentChargeRequest request,

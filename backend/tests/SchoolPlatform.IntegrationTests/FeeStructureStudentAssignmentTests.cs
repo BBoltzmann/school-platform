@@ -14,6 +14,96 @@ namespace SchoolPlatform.IntegrationTests;
 public sealed class FeeStructureStudentAssignmentTests
 {
     [PostgresTimetableFact]
+    public async Task ZeroAssignmentsReconcileHistoricalChargesAndProtectPaidCharges()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await database.Tenants.SingleAsync();
+        var session = new AcademicSession(tenant.Id, "2026/2027", new(2026, 9, 1), new(2027, 7, 1), true);
+        var term = new AcademicTerm(tenant.Id, session.Id, "First Term", new(2026, 9, 1), new(2026, 12, 20), 1);
+        var campus = new Campus(tenant.Id, "Main campus");
+        var level = new AcademicLevel(tenant.Id, "SSS", "Senior", 1);
+        var classGroup = new ClassGroup(tenant.Id, campus.Id, level.Id, "SS3");
+        var student = NewStudent(tenant.Id, "ZERO-1", "Michael");
+        var enrollment = new StudentEnrollment(tenant.Id, student.Id, session.Id, level.Id, classGroup.Id, new(2026, 9, 1), true);
+        var items = new[]
+        {
+            new FeeItem(tenant.Id, "School Practicals", "PRACTICALS", null),
+            new FeeItem(tenant.Id, "Half Yearly Tuition", "TUITION", null),
+            new FeeItem(tenant.Id, "Half Year Lesson", "LESSON", null)
+        };
+        var structure = new FeeStructure(tenant.Id, session.Id, term.Id, "SS3 1ST HALF YEAR ART/COMM", "Class", classGroup.Id);
+        var protectedStructure = new FeeStructure(tenant.Id, session.Id, term.Id, "Protected historical structure", "Class", classGroup.Id);
+
+        database.AddRange(session, term, campus, level, classGroup, student, enrollment, structure, protectedStructure);
+        database.AddRange(items);
+        database.AddRange(
+            new FeeStructureLine(tenant.Id, structure.Id, items[0].Id, 25000m, true),
+            new FeeStructureLine(tenant.Id, structure.Id, items[1].Id, 97500m, true),
+            new FeeStructureLine(tenant.Id, structure.Id, items[2].Id, 18000m, true),
+            new FeeStructureLine(tenant.Id, protectedStructure.Id, items[0].Id, 25000m, true));
+        await database.SaveChangesAsync();
+
+        var service = new FeesService(database, new FixedTenantContext(tenant.Id));
+        await service.ReplaceAssignedStudentsAsync(structure.Id, new([student.Id]));
+        var generated = await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(1, generated.StudentCount);
+        Assert.Equal(3, generated.ChargesCreated);
+        Assert.Equal(3, await database.StudentFeeCharges.CountAsync(x => x.FeeStructureId == structure.Id && x.IsActive));
+
+        await service.RemoveStudentAssignmentAsync(structure.Id, student.Id);
+        Assert.Empty(await service.GetAssignedStudentsAsync(structure.Id));
+        var beforeSync = await service.GetStudentAccountAsync(student.Id, term.Id);
+        Assert.Equal(3, beforeSync.Charges.Count);
+
+        var synchronizedUnpaid = await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(0, synchronizedUnpaid.StudentCount);
+        Assert.Equal(0, synchronizedUnpaid.ChargesCreated);
+        Assert.Equal(3, synchronizedUnpaid.DeactivatedCount);
+        Assert.Equal(0, synchronizedUnpaid.ProtectedCount);
+
+        var accountAfterUnpaidSync = await service.GetStudentAccountAsync(student.Id, term.Id);
+        Assert.Empty(accountAfterUnpaidSync.Charges);
+        Assert.Equal(0m, accountAfterUnpaidSync.OutstandingBalance);
+
+        var outstanding = await service.GetOutstandingAsync(term.Id);
+        Assert.Empty(outstanding);
+        var overview = await service.GetOverviewAsync(term.Id);
+        Assert.Equal(0m, overview.TotalBilled);
+        Assert.Equal(0m, overview.TotalCollected);
+        Assert.Equal(0m, overview.TotalOutstanding);
+
+        await service.ReplaceAssignedStudentsAsync(protectedStructure.Id, new([student.Id]));
+        await service.GenerateChargesAsync(protectedStructure.Id);
+        var paidAmount = await service.RecordPaymentAsync(
+            student.Id,
+            new RecordFeePaymentRequest(term.Id, 25000m, "Cash", "ZERO-RECEIPT", null));
+        Assert.Equal(25000m, paidAmount.AllocatedAmount);
+        await service.RemoveStudentAssignmentAsync(protectedStructure.Id, student.Id);
+
+        var synchronized = await service.GenerateChargesAsync(protectedStructure.Id);
+        Assert.Equal(0, synchronized.StudentCount);
+        Assert.Equal(0, synchronized.ChargesCreated);
+        Assert.Equal(0, synchronized.DeactivatedCount);
+        Assert.Equal(1, synchronized.ProtectedCount);
+        var protectedAccount = await service.GetStudentAccountAsync(student.Id, term.Id);
+        Assert.Single(protectedAccount.Charges);
+        Assert.Equal(25000m, protectedAccount.AppliedPayments);
+
+        var termReconciled = await service.ReconcileTermFeesAsync(term.Id);
+        Assert.Equal(2, termReconciled.StructuresChecked);
+        Assert.Equal(0, termReconciled.ChargesCreated);
+        Assert.Equal(0, termReconciled.ChargesDeactivated);
+        Assert.Equal(1, termReconciled.ProtectedCharges);
+        var repeatedTermReconciled = await service.ReconcileTermFeesAsync(term.Id);
+        Assert.Equal(0, repeatedTermReconciled.ChargesCreated);
+        Assert.Equal(0, repeatedTermReconciled.ChargesDeactivated);
+    }
+
+    [PostgresTimetableFact]
     public async Task AssignmentsDriveExplicitGenerationAndPreserveHistory()
     {
         using var factory = new AuthenticationFactory();

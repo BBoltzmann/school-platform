@@ -89,6 +89,15 @@ public sealed record GenerateChargesResult(
     int ProtectedCount = 0,
     IReadOnlyCollection<ProtectedFeeChargeResult>? ProtectedCharges = null);
 
+public sealed record ReconcileTermFeesResult(
+    Guid AcademicTermId,
+    int StructuresChecked,
+    int StudentsChecked,
+    int ChargesCreated,
+    int ChargesRetained,
+    int ChargesDeactivated,
+    int ProtectedCharges);
+
 public sealed record ProtectedFeeChargeResult(
     Guid ChargeId,
     Guid StudentId,

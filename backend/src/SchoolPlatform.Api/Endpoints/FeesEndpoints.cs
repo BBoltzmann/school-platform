@@ -107,6 +107,25 @@ public static class FeesEndpoints
                         cancellationToken));
             });
 
+        group.MapPost(
+            "/terms/{academicTermId:guid}/reconcile",
+            async (
+                Guid academicTermId,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.update"))
+                {
+                    return Results.Forbid();
+                }
+
+                return await ExecuteAsync(
+                    () => service.ReconcileTermFeesAsync(
+                        academicTermId,
+                        cancellationToken));
+            });
+
         group.MapPut(
             "/structures/{feeStructureId:guid}",
             async (
