@@ -22,6 +22,21 @@ import type {
   FeesSetup,
 } from "@/types/fees";
 
+async function readFeeResponse(response: Response): Promise<Record<string, unknown>> {
+  const body = await response.text();
+  if (!body.trim()) {
+    return {};
+  }
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return parsed && typeof parsed === "object"
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 export function FeeStructuresWorkspace({
   setup,
 }: {
@@ -159,12 +174,13 @@ export function FeeStructuresWorkspace({
           }
         );
 
-      const result =
-        await response.json();
+      const result = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          result.error
+          typeof result.error === "string"
+            ? result.error
+            : "Unable to create fee item."
         );
       }
 
@@ -256,12 +272,11 @@ export function FeeStructuresWorkspace({
           }
         );
 
-      const result =
-        await response.json();
+      const result = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          result.error
+          result.error ?? "Unable to create fee structure."
         );
       }
 
@@ -344,12 +359,13 @@ export function FeeStructuresWorkspace({
           }
         );
 
-      const result =
-        await response.json();
+      const result = await readFeeResponse(response);
 
       if (!response.ok) {
         throw new Error(
-          result.error
+          typeof result.error === "string"
+            ? result.error
+            : `Fee sync failed (HTTP ${response.status}).`
         );
       }
 
@@ -378,8 +394,14 @@ export function FeeStructuresWorkspace({
     setError(null);
     try {
       const response = await fetch(`/api/fees/terms/${academicTermId}/reconcile`, { method: "POST" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Unable to reconcile term fees.");
+      const result = await readFeeResponse(response);
+      if (!response.ok) {
+        throw new Error(
+          typeof result.error === "string"
+            ? result.error
+            : `Fee reconciliation failed (HTTP ${response.status}).`
+        );
+      }
       setNotice(`Term fees reconciled — ${result.chargesCreated ?? 0} created, ${result.chargesDeactivated ?? 0} deactivated, ${result.protectedCharges ?? 0} protected.`);
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : "Unable to reconcile term fees.");

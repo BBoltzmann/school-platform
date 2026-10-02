@@ -36,8 +36,21 @@ export async function POST(
     );
   }
 
-  const result =
-    await response.json();
+  const body = await response.text();
+  let result: unknown = {};
+  if (body.trim()) {
+    try {
+      result = JSON.parse(body);
+    } catch {
+      result = {
+        error: `Fee service request failed (HTTP ${response.status}).`,
+      };
+    }
+  } else if (!response.ok) {
+    result = {
+      error: `Fee service request failed (HTTP ${response.status}).`,
+    };
+  }
 
   return NextResponse.json(
     result,

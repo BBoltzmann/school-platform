@@ -357,5 +357,11 @@ public static class FeesEndpoints
                     error = exception.Message
                 });
         }
+        catch (Exception)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status500InternalServerError,
+                title: "Fee service request failed.");
+        }
     }
 }

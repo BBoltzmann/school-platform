@@ -84,6 +84,18 @@ test("fee structures expose term reconciliation", () => {
   assert.match(read("app/api/fees/terms/[academicTermId]/reconcile/route.ts"), /method: "POST"/);
 });
 
+test("fee generation handles empty and malformed upstream responses", () => {
+  const workspace = read("components/fees/fee-structures-workspace.tsx");
+  const route = read("app/api/fees/structures/[structureId]/generate/route.ts");
+
+  assert.match(workspace, /response\.text\(\)/);
+  assert.match(workspace, /Fee sync failed \(HTTP/);
+  assert.match(workspace, /Fee reconciliation failed \(HTTP/);
+  assert.match(route, /response\.text\(\)/);
+  assert.match(route, /JSON\.parse\(body\)/);
+  assert.match(route, /Fee service request failed \(HTTP/);
+});
+
 test("parallel group management and effective timetable capacity are visible", () => {
   const groups = read("components/academics/class-subject-actions.tsx");
   const requirements = read("components/timetable/class-subject-requirements-editor.tsx");
