@@ -237,6 +237,46 @@ public static class FeesEndpoints
             });
 
         group.MapGet(
+            "/students/{studentId:guid}/optional-components",
+            async (
+                Guid studentId,
+                Guid academicTermId,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.read")) return Results.Forbid();
+                return await ExecuteAsync(() => service.GetOptionalFeeComponentsAsync(studentId, academicTermId, cancellationToken));
+            });
+
+        group.MapPost(
+            "/students/{studentId:guid}/optional-components",
+            async (
+                Guid studentId,
+                AddOptionalFeeComponentRequest request,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.update")) return Results.Forbid();
+                return await ExecuteAsync(() => service.AddOptionalFeeComponentAsync(studentId, request, cancellationToken));
+            });
+
+        group.MapPatch(
+            "/students/{studentId:guid}/charges/{chargeId:guid}",
+            async (
+                Guid studentId,
+                Guid chargeId,
+                UpdateOptionalFeeChargeRequest request,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.update")) return Results.Forbid();
+                return await ExecuteAsync(() => service.UpdateOptionalFeeChargeAsync(studentId, chargeId, request, cancellationToken));
+            });
+
+        group.MapGet(
             "/students/{studentId:guid}/account",
             async (
                 Guid studentId,

@@ -358,6 +358,53 @@ public sealed class FeeStructureStudentAssignmentTests
     }
 
     [PostgresTimetableFact]
+    public async Task OptionalComponentKeepsCustomAmountAndPaymentAllocation()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await database.Tenants.SingleAsync();
+        var session = new AcademicSession(tenant.Id, "2026/2027", new(2026, 9, 1), new(2027, 7, 1), true);
+        var term = new AcademicTerm(tenant.Id, session.Id, "First Term", new(2026, 9, 1), new(2026, 12, 20), 1);
+        var campus = new Campus(tenant.Id, "Main campus");
+        var level = new AcademicLevel(tenant.Id, "JSS", "Junior", 1);
+        var classGroup = new ClassGroup(tenant.Id, campus.Id, level.Id, "JSS 2");
+        var student = NewStudent(tenant.Id, "OPTIONAL-1", "Optional");
+        var enrollment = new StudentEnrollment(tenant.Id, student.Id, session.Id, level.Id, classGroup.Id, new(2026, 9, 1), true);
+        var tuition = new FeeItem(tenant.Id, "Tuition", "TUI", null);
+        var books = new FeeItem(tenant.Id, "Books", "BOOKS", null);
+        var structure = new FeeStructure(tenant.Id, session.Id, term.Id, "Returning JSS 2", "Class", classGroup.Id);
+        database.AddRange(session, term, campus, level, classGroup, student, enrollment, tuition, books, structure);
+        var requiredLine = new FeeStructureLine(tenant.Id, structure.Id, tuition.Id, 60000m, true);
+        var optionalLine = new FeeStructureLine(tenant.Id, structure.Id, books.Id, 20000m, false);
+        database.AddRange(requiredLine, optionalLine);
+        await database.SaveChangesAsync();
+        var service = new FeesService(database, new FixedTenantContext(tenant.Id));
+        await service.ReplaceAssignedStudentsAsync(structure.Id, new([student.Id]));
+        var generated = await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(1, generated.ChargesCreated);
+        Assert.Single(await database.StudentFeeCharges.Where(x => x.FeeStructureLineId == requiredLine.Id && x.IsActive).ToListAsync());
+        Assert.Empty(await database.StudentFeeCharges.Where(x => x.FeeStructureLineId == optionalLine.Id && x.IsActive).ToListAsync());
+        var eligible = await service.GetOptionalFeeComponentsAsync(student.Id, term.Id);
+        Assert.Single(eligible);
+        Assert.Equal(20000m, eligible.Single().TemplateAmount);
+        var added = await service.AddOptionalFeeComponentAsync(student.Id, new(term.Id, optionalLine.Id, 25000m));
+        Assert.Equal(25000m, added.Amount);
+        var synced = await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(0, synced.ChargesCreated);
+        Assert.Single(await database.StudentFeeCharges.Where(x => x.FeeStructureLineId == optionalLine.Id && x.IsActive).ToListAsync());
+        var payment = await service.RecordPaymentAsync(student.Id, new(term.Id, 85000m, "Cash", "OPTIONAL-RECEIPT", null));
+        Assert.Equal(85000m, payment.AllocatedAmount);
+        var account = await service.GetStudentAccountAsync(student.Id, term.Id);
+        Assert.Equal(0m, account.OutstandingBalance);
+        Assert.Equal(0m, account.CreditBalance);
+        var receipt = account.Payments.Single(x => x.ReceiptNumber == payment.ReceiptNumber);
+        Assert.Equal(2, receipt.Allocations!.Count);
+        Assert.Contains(receipt.Allocations, x => x.ChargeType == "Optional" && x.AmountAllocated == 25000m);
+    }
+
+    [PostgresTimetableFact]
     public async Task AssignmentRejectsCrossTenantStudent()
     {
         using var factory = new AuthenticationFactory();

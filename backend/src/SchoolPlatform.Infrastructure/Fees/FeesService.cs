@@ -682,11 +682,18 @@ public sealed class FeesService : IFeesService
             var expectedKeys = expectedLines
                 .Select(x => (x.StructureId, LineId: x.Line.Id))
                 .ToHashSet();
+            var optionalKeys = structures
+                .Where(candidate =>
+                    assignmentLookup.GetValueOrDefault(candidate.Id)?.Contains(studentId) == true)
+                .SelectMany(candidate => candidate.Lines
+                    .Where(line => !line.IsRequired)
+                    .Select(line => (StructureId: candidate.Id, LineId: line.Id)))
+                .ToHashSet();
             var retainedKeys = new HashSet<(Guid StructureId, Guid LineId)>();
             foreach (var charge in studentCharges)
             {
                 var key = (charge.FeeStructureId!.Value, charge.FeeStructureLineId!.Value);
-                if (expectedKeys.Contains(key) && retainedKeys.Add(key))
+                if ((expectedKeys.Contains(key) || optionalKeys.Contains(key)) && retainedKeys.Add(key))
                 {
                     retained++;
                     continue;
@@ -856,6 +863,131 @@ public sealed class FeesService : IFeesService
             feeItem.Name);
     }
 
+    public async Task<IReadOnlyCollection<OptionalFeeComponentResult>>
+        GetOptionalFeeComponentsAsync(
+            Guid studentId,
+            Guid academicTermId,
+            CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var sessionId = await GetCurrentSessionIdAsync(tenantId, cancellationToken);
+        await ValidateTermAsync(tenantId, sessionId, academicTermId, cancellationToken);
+        var studentExists = await _database.Students.AnyAsync(
+            x => x.TenantId == tenantId && x.Id == studentId && x.IsActive,
+            cancellationToken);
+        if (!studentExists) throw new InvalidOperationException("Student was not found.");
+
+        var assignedStructureIds = await _database.FeeStructureStudentAssignments
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.StudentId == studentId)
+            .Select(x => x.FeeStructureId)
+            .ToListAsync(cancellationToken);
+        var lines = await _database.FeeStructureLines
+            .AsNoTracking()
+            .Include(x => x.FeeStructure)
+            .Include(x => x.FeeItem)
+            .Where(x =>
+                x.TenantId == tenantId &&
+                assignedStructureIds.Contains(x.FeeStructureId) &&
+                x.FeeStructure.AcademicSessionId == sessionId &&
+                x.FeeStructure.AcademicTermId == academicTermId &&
+                x.FeeStructure.IsActive &&
+                !x.IsRequired)
+            .OrderBy(x => x.FeeStructure.Name)
+            .ThenBy(x => x.FeeItem.Name)
+            .ToListAsync(cancellationToken);
+        var lineIds = lines.Select(x => x.Id).ToArray();
+        var existing = await _database.StudentFeeCharges
+            .AsNoTracking()
+            .Where(x =>
+                x.TenantId == tenantId && x.StudentId == studentId &&
+                x.AcademicTermId == academicTermId &&
+                x.FeeStructureLineId.HasValue && lineIds.Contains(x.FeeStructureLineId.Value))
+            .ToDictionaryAsync(x => x.FeeStructureLineId!.Value, cancellationToken);
+        return lines.Select(line =>
+        {
+            existing.TryGetValue(line.Id, out var charge);
+            return new OptionalFeeComponentResult(
+                line.FeeStructureId,
+                line.FeeStructure.Name,
+                line.Id,
+                line.FeeItemId,
+                line.FeeItem.Name,
+                line.FeeItem.Code,
+                line.Amount,
+                charge is not null,
+                charge?.Id,
+                charge?.Amount);
+        }).ToList();
+    }
+
+    public async Task<StudentFeeChargeResult> AddOptionalFeeComponentAsync(
+        Guid studentId,
+        AddOptionalFeeComponentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var sessionId = await GetCurrentSessionIdAsync(tenantId, cancellationToken);
+        await ValidateTermAsync(tenantId, sessionId, request.AcademicTermId, cancellationToken);
+        if (request.Amount <= 0) throw new InvalidOperationException("Charge amount must be greater than zero.");
+        var line = await _database.FeeStructureLines
+            .Include(x => x.FeeStructure)
+            .Include(x => x.FeeItem)
+            .SingleOrDefaultAsync(x =>
+                x.TenantId == tenantId && x.Id == request.FeeStructureLineId &&
+                x.FeeStructure.AcademicSessionId == sessionId &&
+                x.FeeStructure.AcademicTermId == request.AcademicTermId &&
+                x.FeeStructure.IsActive && !x.IsRequired, cancellationToken)
+            ?? throw new InvalidOperationException("Optional fee component was not found.");
+        var assigned = await _database.FeeStructureStudentAssignments.AnyAsync(x =>
+            x.TenantId == tenantId && x.FeeStructureId == line.FeeStructureId && x.StudentId == studentId, cancellationToken);
+        if (!assigned) throw new InvalidOperationException("Student is not explicitly assigned to this fee structure.");
+        var existing = await _database.StudentFeeCharges.SingleOrDefaultAsync(x =>
+            x.TenantId == tenantId && x.StudentId == studentId && x.AcademicTermId == request.AcademicTermId &&
+            x.FeeStructureLineId == line.Id, cancellationToken);
+        if (existing is not null)
+        {
+            if (existing.AmountPaid > 0 || await _database.FeePaymentAllocations.AnyAsync(x => x.TenantId == tenantId && x.StudentFeeChargeId == existing.Id, cancellationToken))
+                throw new InvalidOperationException("This optional component already has payment history.");
+            existing.UpdateAmount(request.Amount);
+            existing.Reactivate();
+            await _database.SaveChangesAsync(cancellationToken);
+            return ToChargeResult(existing, line.FeeItem.Name, line.FeeStructure.Name);
+        }
+        var charge = new StudentFeeCharge(tenantId, studentId, sessionId, request.AcademicTermId, line.FeeItemId, line.FeeStructureId, line.Id, line.FeeItem.Name, request.Amount);
+        _database.StudentFeeCharges.Add(charge);
+        await _database.SaveChangesAsync(cancellationToken);
+        return ToChargeResult(charge, line.FeeItem.Name, line.FeeStructure.Name);
+    }
+
+    public async Task<StudentFeeChargeResult> UpdateOptionalFeeChargeAsync(
+        Guid studentId,
+        Guid chargeId,
+        UpdateOptionalFeeChargeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var charge = await _database.StudentFeeCharges
+            .Include(x => x.FeeItem)
+            .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Id == chargeId && x.StudentId == studentId && x.IsActive && x.FeeStructureLineId.HasValue, cancellationToken)
+            ?? throw new InvalidOperationException("Optional fee charge was not found.");
+        var line = await _database.FeeStructureLines.AsNoTracking().Include(x => x.FeeStructure).SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Id == charge.FeeStructureLineId && !x.IsRequired && x.FeeStructure.IsActive, cancellationToken)
+            ?? throw new InvalidOperationException("Only optional structure charges can be edited.");
+        if (await _database.FeePaymentAllocations.AnyAsync(x => x.TenantId == tenantId && x.StudentFeeChargeId == chargeId, cancellationToken) || charge.AmountPaid > 0)
+        {
+            charge.UpdateAmount(request.Amount);
+        }
+        else
+        {
+            charge.UpdateAmount(request.Amount);
+        }
+        await _database.SaveChangesAsync(cancellationToken);
+        var structureName = charge.FeeStructureId.HasValue
+            ? await _database.FeeStructures.Where(x => x.TenantId == tenantId && x.Id == charge.FeeStructureId).Select(x => x.Name).SingleOrDefaultAsync(cancellationToken)
+            : null;
+        return ToChargeResult(charge, charge.FeeItem.Name, structureName);
+    }
+
     public async Task<StudentFeeAccountResult> GetStudentAccountAsync(
         Guid studentId,
         Guid academicTermId,
@@ -908,6 +1040,11 @@ public sealed class FeesService : IFeesService
             .AsNoTracking()
             .Where(x => x.TenantId == tenantId && structureIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var lineIds = charges.Where(x => x.FeeStructureLineId.HasValue).Select(x => x.FeeStructureLineId!.Value).ToArray();
+        var requiredByLine = await _database.FeeStructureLines
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && lineIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.IsRequired, cancellationToken);
 
         var payments =
             await _database.FeePayments
@@ -921,6 +1058,31 @@ public sealed class FeesService : IFeesService
                     x.CreatedAtUtc)
                 .ToListAsync(
                     cancellationToken);
+        var paymentIds = payments.Select(x => x.Id).ToArray();
+        var allocationRows = await _database.FeePaymentAllocations
+            .AsNoTracking()
+            .Include(x => x.StudentFeeCharge)
+                .ThenInclude(x => x.FeeItem)
+            .Where(x => x.TenantId == tenantId && paymentIds.Contains(x.FeePaymentId))
+            .ToListAsync(cancellationToken);
+        var allocationStructureIds = allocationRows
+            .Where(x => x.StudentFeeCharge.FeeStructureId.HasValue)
+            .Select(x => x.StudentFeeCharge.FeeStructureId!.Value)
+            .Distinct()
+            .ToArray();
+        var allocationStructureNames = await _database.FeeStructures
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && allocationStructureIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var allocationLineIds = allocationRows
+            .Where(x => x.StudentFeeCharge.FeeStructureLineId.HasValue)
+            .Select(x => x.StudentFeeCharge.FeeStructureLineId!.Value)
+            .Distinct()
+            .ToArray();
+        var allocationRequired = await _database.FeeStructureLines
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && allocationLineIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.IsRequired, cancellationToken);
 
         var activePayments =
             payments.Where(x =>
@@ -964,6 +1126,9 @@ public sealed class FeesService : IFeesService
                         x.FeeItem.Name,
                         x.FeeStructureId.HasValue
                             ? structureNames.GetValueOrDefault(x.FeeStructureId.Value)
+                            : null,
+                        x.FeeStructureLineId.HasValue && requiredByLine.TryGetValue(x.FeeStructureLineId.Value, out var required)
+                            ? required
                             : null))
                 .ToList(),
             payments
@@ -989,7 +1154,26 @@ public sealed class FeesService : IFeesService
                         x.Reference,
                         x.Notes,
                         x.IsReversed,
-                        x.CreatedAtUtc);
+                        x.CreatedAtUtc,
+                        allocationRows
+                            .Where(row => row.FeePaymentId == x.Id)
+                            .Select(row =>
+                            {
+                                var charge = row.StudentFeeCharge;
+                                var chargeType = charge.FeeStructureLineId.HasValue && allocationRequired.TryGetValue(charge.FeeStructureLineId.Value, out var required)
+                                    ? (required ? "Required" : "Optional")
+                                    : "Manual";
+                                return new FeePaymentAllocationResult(
+                                    charge.Id,
+                                    charge.Description,
+                                    charge.FeeItem.Name,
+                                    charge.FeeStructureId.HasValue
+                                        ? allocationStructureNames.GetValueOrDefault(charge.FeeStructureId.Value)
+                                        : null,
+                                    chargeType,
+                                    row.Amount);
+                            })
+                            .ToList());
                 })
                 .ToList());
     }
@@ -1103,6 +1287,44 @@ public sealed class FeesService : IFeesService
 
         var allocated =
             request.Amount - remaining;
+        var receiptAllocations = await _database.FeePaymentAllocations
+            .AsNoTracking()
+            .Include(x => x.StudentFeeCharge)
+                .ThenInclude(x => x.FeeItem)
+            .Where(x => x.TenantId == tenantId && x.FeePaymentId == payment.Id)
+            .ToListAsync(cancellationToken);
+        var receiptStructureIds = receiptAllocations
+            .Where(x => x.StudentFeeCharge.FeeStructureId.HasValue)
+            .Select(x => x.StudentFeeCharge.FeeStructureId!.Value)
+            .Distinct()
+            .ToArray();
+        var receiptStructures = await _database.FeeStructures
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && receiptStructureIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var receiptLineIds = receiptAllocations
+            .Where(x => x.StudentFeeCharge.FeeStructureLineId.HasValue)
+            .Select(x => x.StudentFeeCharge.FeeStructureLineId!.Value)
+            .Distinct()
+            .ToArray();
+        var receiptRequired = await _database.FeeStructureLines
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && receiptLineIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.IsRequired, cancellationToken);
+        var allocationResults = receiptAllocations.Select(row =>
+        {
+            var charge = row.StudentFeeCharge;
+            var type = charge.FeeStructureLineId.HasValue && receiptRequired.TryGetValue(charge.FeeStructureLineId.Value, out var required)
+                ? (required ? "Required" : "Optional")
+                : "Manual";
+            return new FeePaymentAllocationResult(
+                charge.Id,
+                charge.Description,
+                charge.FeeItem.Name,
+                charge.FeeStructureId.HasValue ? receiptStructures.GetValueOrDefault(charge.FeeStructureId.Value) : null,
+                type,
+                row.Amount);
+        }).ToList();
 
         return new FeePaymentResult(
             payment.Id,
@@ -1114,7 +1336,8 @@ public sealed class FeesService : IFeesService
             payment.Reference,
             payment.Notes,
             false,
-            payment.CreatedAtUtc);
+            payment.CreatedAtUtc,
+            allocationResults);
     }
 
     public async Task ReversePaymentAsync(
@@ -1690,7 +1913,8 @@ public sealed class FeesService : IFeesService
     private static StudentFeeChargeResult ToChargeResult(
         StudentFeeCharge charge,
         string feeItemName,
-        string? feeStructureName = null)
+        string? feeStructureName = null,
+        bool? isRequired = null)
     {
         return new StudentFeeChargeResult(
             charge.Id,
@@ -1703,6 +1927,7 @@ public sealed class FeesService : IFeesService
             charge.Amount,
             charge.AmountPaid,
             charge.Balance,
-            charge.Balance <= 0m);
+            charge.Balance <= 0m,
+            isRequired);
     }
 }

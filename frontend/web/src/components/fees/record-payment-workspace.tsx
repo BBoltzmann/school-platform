@@ -60,6 +60,10 @@ export function RecordPaymentWorkspace({
     useState<string | null>(
       null
     );
+  const [optionalComponents, setOptionalComponents] = useState<{ feeStructureLineId: string; feeStructureName: string; feeItemName: string; templateAmount: number; alreadyAdded: boolean }[]>([]);
+  const [optionalLineId, setOptionalLineId] = useState("");
+  const [optionalAmount, setOptionalAmount] = useState("");
+  const [optionalMessage, setOptionalMessage] = useState<string | null>(null);
 
   const [receipt, setReceipt] =
     useState<{
@@ -68,6 +72,14 @@ export function RecordPaymentWorkspace({
       creditAmount: number;
       receiptNumber: string;
       paymentMethod: string;
+      allocations: {
+        studentFeeChargeId: string;
+        description: string;
+        feeItemName: string;
+        feeStructureName: string | null;
+        chargeType: string;
+        amountAllocated: number;
+      }[];
     } | null>(null);
 
   async function record() {
@@ -143,6 +155,29 @@ export function RecordPaymentWorkspace({
     }
   }
 
+  async function loadOptionalComponents() {
+    if (!studentId || !academicTermId) return;
+    const response = await fetch(`/api/fees/students/${studentId}/optional-components?academicTermId=${academicTermId}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error ?? "Unable to load optional components.");
+    setOptionalComponents(result);
+    const first = result.find((item: typeof optionalComponents[number]) => !item.alreadyAdded);
+    setOptionalLineId(first?.feeStructureLineId ?? "");
+    setOptionalAmount(first ? String(first.templateAmount) : "");
+  }
+
+  async function addOptionalComponent() {
+    const numeric = Number(optionalAmount);
+    if (!optionalLineId || !Number.isFinite(numeric) || numeric <= 0) { setOptionalMessage("Choose an optional component and enter a valid amount."); return; }
+    try {
+      const response = await fetch(`/api/fees/students/${studentId}/optional-components`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ academicTermId, feeStructureLineId: optionalLineId, amount: numeric }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to add optional component.");
+      setOptionalMessage("Optional component added. It will be included in the next payment allocation.");
+      await loadOptionalComponents();
+    } catch (exception) { setOptionalMessage(exception instanceof Error ? exception.message : "Unable to add optional component."); }
+  }
+
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
       <section className="rounded-xl border bg-card">
@@ -215,6 +250,15 @@ export function RecordPaymentWorkspace({
               )}
             </select>
           </Field>
+
+          <div className="md:col-span-2 rounded-lg border border-dashed p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label="Optional component"><select value={optionalLineId} onFocus={() => void loadOptionalComponents()} onChange={event => { setOptionalLineId(event.target.value); const item = optionalComponents.find(component => component.feeStructureLineId === event.target.value); setOptionalAmount(item ? String(item.templateAmount) : ""); }} className={inputClass}><option value="">Add Optional Component</option>{optionalComponents.map(component => <option key={component.feeStructureLineId} value={component.feeStructureLineId} disabled={component.alreadyAdded}>{component.feeItemName} — {component.feeStructureName}{component.alreadyAdded ? " (already added)" : ""}</option>)}</select></Field>
+              <Field label="Charge amount"><input type="number" min="0.01" value={optionalAmount} onChange={event => setOptionalAmount(event.target.value)} className={inputClass} /></Field>
+              <Button type="button" variant="outline" onClick={addOptionalComponent} disabled={!optionalLineId}>Add Optional Component</Button>
+            </div>
+            {optionalMessage && <p className="mt-2 text-xs text-muted-foreground">{optionalMessage}</p>}
+          </div>
 
           <Field label="Amount">
             <input
@@ -326,7 +370,21 @@ export function RecordPaymentWorkspace({
               value={
                 receipt.receiptNumber
               }
-            />
+              />
+
+            {receipt.allocations.length > 0 && (
+              <div className="border-y py-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Allocations</div>
+                <div className="space-y-2">
+                  {receipt.allocations.map(allocation => (
+                    <div key={allocation.studentFeeChargeId} className="flex justify-between gap-4 text-sm">
+                      <span>{allocation.description}{allocation.feeStructureName ? ` · ${allocation.feeStructureName}` : ""}<span className="ml-1 text-xs text-muted-foreground">({allocation.chargeType})</span></span>
+                      <span className="font-medium">{money(allocation.amountAllocated)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <ReceiptRow
               label="Amount"

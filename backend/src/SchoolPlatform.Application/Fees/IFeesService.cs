@@ -51,6 +51,23 @@ public interface IFeesService
         CreateStudentChargeRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<OptionalFeeComponentResult>>
+        GetOptionalFeeComponentsAsync(
+            Guid studentId,
+            Guid academicTermId,
+            CancellationToken cancellationToken = default);
+
+    Task<StudentFeeChargeResult> AddOptionalFeeComponentAsync(
+        Guid studentId,
+        AddOptionalFeeComponentRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<StudentFeeChargeResult> UpdateOptionalFeeChargeAsync(
+        Guid studentId,
+        Guid chargeId,
+        UpdateOptionalFeeChargeRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<StudentFeeAccountResult> GetStudentAccountAsync(
         Guid studentId,
         Guid academicTermId,

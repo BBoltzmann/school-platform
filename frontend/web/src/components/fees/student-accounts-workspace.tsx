@@ -6,6 +6,7 @@ import {
 } from "react";
 import {
   LoaderCircle,
+  Plus,
   UserRound,
 } from "lucide-react";
 
@@ -35,6 +36,7 @@ type Account = {
     amountPaid: number;
     balance: number;
     isPaid: boolean;
+    isRequired: boolean | null;
   }[];
   payments: {
     id: string;
@@ -46,6 +48,19 @@ type Account = {
     isReversed: boolean;
     createdAtUtc: string;
   }[];
+};
+
+type OptionalComponent = {
+  feeStructureId: string;
+  feeStructureName: string;
+  feeStructureLineId: string;
+  feeItemId: string;
+  feeItemName: string;
+  feeItemCode: string | null;
+  templateAmount: number;
+  alreadyAdded: boolean;
+  existingChargeId: string | null;
+  existingAmount: number | null;
 };
 
 export function StudentAccountsWorkspace({
@@ -83,6 +98,11 @@ export function StudentAccountsWorkspace({
     useState<string | null>(
       null
     );
+  const [optionalComponents, setOptionalComponents] = useState<OptionalComponent[]>([]);
+  const [optionalLineId, setOptionalLineId] = useState("");
+  const [optionalAmount, setOptionalAmount] = useState("");
+  const [optionalSaving, setOptionalSaving] = useState(false);
+  const [optionalMessage, setOptionalMessage] = useState<string | null>(null);
 
   async function loadAccount() {
     if (
@@ -111,6 +131,7 @@ export function StudentAccountsWorkspace({
       }
 
       setAccount(result);
+      await loadOptionalComponents();
     } catch (exception) {
       setError(
         exception instanceof Error
@@ -120,6 +141,61 @@ export function StudentAccountsWorkspace({
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadOptionalComponents() {
+    if (!studentId || !academicTermId) return;
+    const response = await fetch(`/api/fees/students/${studentId}/optional-components?academicTermId=${academicTermId}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error ?? "Unable to load optional components.");
+    setOptionalComponents(result);
+    const first = result.find((item: OptionalComponent) => !item.alreadyAdded);
+    setOptionalLineId(first?.feeStructureLineId ?? "");
+    setOptionalAmount(first ? String(first.templateAmount) : "");
+  }
+
+  async function addOptionalComponent() {
+    const amount = Number(optionalAmount);
+    if (!optionalLineId || !Number.isFinite(amount) || amount <= 0) {
+      setOptionalMessage("Choose an optional component and enter a valid amount.");
+      return;
+    }
+    setOptionalSaving(true);
+    setOptionalMessage(null);
+    try {
+      const response = await fetch(`/api/fees/students/${studentId}/optional-components`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ academicTermId, feeStructureLineId: optionalLineId, amount }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to add optional component.");
+      setOptionalMessage("Optional component added to the account.");
+      await loadAccount();
+    } catch (exception) {
+      setOptionalMessage(exception instanceof Error ? exception.message : "Unable to add optional component.");
+    } finally {
+      setOptionalSaving(false);
+    }
+  }
+
+  async function editOptionalCharge(charge: Account["charges"][number]) {
+    const entered = window.prompt("Charge amount", String(charge.amount));
+    if (entered === null) return;
+    const amount = Number(entered);
+    if (!Number.isFinite(amount) || amount <= 0 || amount < charge.amountPaid) {
+      setOptionalMessage("The amount must be greater than zero and not less than the amount already paid.");
+      return;
+    }
+    const response = await fetch(`/api/fees/students/${studentId}/charges/${charge.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount }),
+    });
+    const result = await response.json();
+    if (!response.ok) { setOptionalMessage(result.error ?? "Unable to update optional charge."); return; }
+    setOptionalMessage("Optional charge updated.");
+    await loadAccount();
   }
 
   const classOptions = Array.from(new Set(
@@ -268,6 +344,22 @@ export function StudentAccountsWorkspace({
             />
           </div>
 
+          <section className="rounded-xl border bg-card p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div><h2 className="font-semibold">Add Optional Fee Component</h2><p className="mt-1 text-xs text-muted-foreground">Add an assigned optional component with a student-specific amount.</p></div>
+              <Plus className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_180px_auto] md:items-end">
+              <label className="text-sm font-medium">Component<select value={optionalLineId} onChange={event => { const value = event.target.value; setOptionalLineId(value); const item = optionalComponents.find(component => component.feeStructureLineId === value); setOptionalAmount(item ? String(item.templateAmount) : ""); }} className={inputClass}>
+                <option value="">Select optional component</option>
+                {optionalComponents.map(component => <option key={component.feeStructureLineId} value={component.feeStructureLineId} disabled={component.alreadyAdded}>{component.feeItemName} — {component.feeStructureName}{component.alreadyAdded ? " (already added)" : ""}</option>)}
+              </select></label>
+              <label className="text-sm font-medium">Charge amount<input type="number" min="0.01" value={optionalAmount} onChange={event => setOptionalAmount(event.target.value)} className={inputClass} /></label>
+              <Button onClick={addOptionalComponent} disabled={optionalSaving || !optionalLineId}>{optionalSaving && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}Add to Account</Button>
+            </div>
+            {optionalMessage && <p className="mt-3 text-sm text-muted-foreground">{optionalMessage}</p>}
+          </section>
+
           <section className="overflow-hidden rounded-xl border bg-card">
             <div className="flex items-center gap-3 border-b p-5">
               <UserRound className="h-5 w-5" />
@@ -327,6 +419,7 @@ export function StudentAccountsWorkspace({
                               (charge.feeStructureId
                                 ? "Legacy / Unlinked"
                                 : "Manual charge")}
+                            {charge.feeStructureId && <span className="ml-1 text-[10px]">· {charge.isRequired === false ? "Optional" : "Required"}</span>}
                           </span>
                         </td>
 
@@ -346,6 +439,7 @@ export function StudentAccountsWorkspace({
                           {money(
                             charge.balance
                           )}
+                          {charge.isRequired === false && charge.amountPaid < charge.amount && <button type="button" onClick={() => void editOptionalCharge(charge)} className="ml-2 text-xs font-medium text-tenant-primary hover:underline">Edit</button>}
                         </td>
                       </tr>
                     )

@@ -38,6 +38,13 @@ public sealed record CreateStudentChargeRequest(
     string Description,
     decimal Amount);
 
+public sealed record AddOptionalFeeComponentRequest(
+    Guid AcademicTermId,
+    Guid FeeStructureLineId,
+    decimal Amount);
+
+public sealed record UpdateOptionalFeeChargeRequest(decimal Amount);
+
 public sealed record RecordFeePaymentRequest(
     Guid AcademicTermId,
     decimal Amount,
@@ -117,7 +124,20 @@ public sealed record StudentFeeChargeResult(
     decimal Amount,
     decimal AmountPaid,
     decimal Balance,
-    bool IsPaid);
+    bool IsPaid,
+    bool? IsRequired = null);
+
+public sealed record OptionalFeeComponentResult(
+    Guid FeeStructureId,
+    string FeeStructureName,
+    Guid FeeStructureLineId,
+    Guid FeeItemId,
+    string FeeItemName,
+    string? FeeItemCode,
+    decimal TemplateAmount,
+    bool AlreadyAdded,
+    Guid? ExistingChargeId,
+    decimal? ExistingAmount);
 
 public sealed record FeePaymentResult(
     Guid Id,
@@ -129,7 +149,16 @@ public sealed record FeePaymentResult(
     string? Reference,
     string? Notes,
     bool IsReversed,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    IReadOnlyCollection<FeePaymentAllocationResult>? Allocations = null);
+
+public sealed record FeePaymentAllocationResult(
+    Guid StudentFeeChargeId,
+    string Description,
+    string FeeItemName,
+    string? FeeStructureName,
+    string ChargeType,
+    decimal AmountAllocated);
 
 public sealed record StudentFeeAccountResult(
     Guid StudentId,

@@ -81,6 +81,17 @@ public sealed class StudentFeeCharge : TenantEntity
         IsActive = true;
     }
 
+    public void UpdateAmount(decimal amount)
+    {
+        if (amount <= 0 || amount < AmountPaid)
+        {
+            throw new InvalidOperationException(
+                "Charge amount must be greater than zero and cannot be less than the amount already paid.");
+        }
+
+        Amount = amount;
+    }
+
     public void ApplyPayment(decimal amount)
     {
         if (amount <= 0)
