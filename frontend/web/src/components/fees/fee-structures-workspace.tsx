@@ -370,7 +370,7 @@ export function FeeStructuresWorkspace({
       }
 
       setNotice(
-        `Fees synchronised successfully — ${result.chargesCreated ?? 0} created, ${result.deactivatedCount ?? 0} obsolete charges removed, ${result.protectedCount ?? 0} protected.`
+        `Fees synchronised successfully — ${result.chargesCreated ?? 0} created, ${result.reactivatedCount ?? 0} reactivated, ${result.deactivatedCount ?? 0} obsolete charges removed, ${result.protectedCount ?? 0} protected.`
       );
     } catch (exception) {
       setError(

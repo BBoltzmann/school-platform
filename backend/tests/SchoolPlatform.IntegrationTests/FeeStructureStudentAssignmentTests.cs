@@ -76,6 +76,44 @@ public sealed class FeeStructureStudentAssignmentTests
         Assert.Equal(0m, overview.TotalCollected);
         Assert.Equal(0m, overview.TotalOutstanding);
 
+        await service.ReplaceAssignedStudentsAsync(structure.Id, new([student.Id]));
+        var reactivated = await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(0, reactivated.ChargesCreated);
+        Assert.Equal(3, reactivated.ReactivatedCount);
+        Assert.Equal(3, await database.StudentFeeCharges.CountAsync(x => x.FeeStructureId == structure.Id && x.IsActive));
+        await service.RemoveStudentAssignmentAsync(structure.Id, student.Id);
+        var secondEmptySync = await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(3, secondEmptySync.DeactivatedCount);
+
+        var additionalStudents = Enumerable.Range(2, 6)
+            .Select(index => NewStudent(tenant.Id, $"ZERO-{index}", $"Student {index}"))
+            .ToArray();
+        var additionalEnrollments = additionalStudents.Select(currentStudent => new StudentEnrollment(
+            tenant.Id,
+            currentStudent.Id,
+            session.Id,
+            level.Id,
+            classGroup.Id,
+            new(2026, 9, 1),
+            true));
+        database.AddRange(additionalStudents);
+        database.AddRange(additionalEnrollments);
+        await database.SaveChangesAsync();
+
+        var sevenStudentIds = additionalStudents.Select(currentStudent => currentStudent.Id)
+            .Append(student.Id)
+            .ToArray();
+        await service.ReplaceAssignedStudentsAsync(structure.Id, new(sevenStudentIds));
+        var sevenStudentSync = await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(7, sevenStudentSync.StudentCount);
+        Assert.Equal(18, sevenStudentSync.ChargesCreated);
+        Assert.Equal(3, sevenStudentSync.ReactivatedCount);
+        Assert.Equal(21, await database.StudentFeeCharges.CountAsync(
+            x => x.FeeStructureId == structure.Id && x.IsActive));
+
+        await service.RemoveStudentAssignmentAsync(structure.Id, student.Id);
+        await service.GenerateChargesAsync(structure.Id);
+
         await service.ReplaceAssignedStudentsAsync(protectedStructure.Id, new([student.Id]));
         await service.GenerateChargesAsync(protectedStructure.Id);
         var paidAmount = await service.RecordPaymentAsync(

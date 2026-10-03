@@ -85,6 +85,7 @@ public sealed record GenerateChargesResult(
     int ChargesCreated,
     decimal TotalAmountGenerated,
     int RetainedCount = 0,
+    int ReactivatedCount = 0,
     int DeactivatedCount = 0,
     int ProtectedCount = 0,
     IReadOnlyCollection<ProtectedFeeChargeResult>? ProtectedCharges = null);

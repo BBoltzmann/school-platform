@@ -76,6 +76,11 @@ public sealed class StudentFeeCharge : TenantEntity
         IsActive = false;
     }
 
+    public void Reactivate()
+    {
+        IsActive = true;
+    }
+
     public void ApplyPayment(decimal amount)
     {
         if (amount <= 0)

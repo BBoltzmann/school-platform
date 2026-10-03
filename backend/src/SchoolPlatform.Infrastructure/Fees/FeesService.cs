@@ -649,16 +649,19 @@ public sealed class FeesService : IFeesService
             }
         }
 
-        var activeCharges = await _database.StudentFeeCharges
+        var generatedCharges = await _database.StudentFeeCharges
             .Where(x =>
                 x.TenantId == tenantId &&
                 studentIds.Contains(x.StudentId) &&
                 x.AcademicTermId == structure.AcademicTermId &&
-                x.IsActive &&
                 x.FeeStructureId.HasValue &&
                 x.FeeStructureLineId.HasValue)
             .ToListAsync(cancellationToken);
-        var chargeIds = activeCharges.Select(x => x.Id).ToArray();
+        var activeCharges = generatedCharges.Where(x => x.IsActive).ToList();
+        var chargesByKey = generatedCharges
+            .GroupBy(x => (x.StudentId, FeeStructureLineId: x.FeeStructureLineId!.Value))
+            .ToDictionary(x => x.Key, x => x.OrderByDescending(v => v.IsActive).First());
+        var chargeIds = generatedCharges.Select(x => x.Id).ToArray();
         var allocatedChargeIds = (await _database.FeePaymentAllocations
             .AsNoTracking()
             .Where(x => x.TenantId == tenantId && chargeIds.Contains(x.StudentFeeChargeId))
@@ -669,6 +672,7 @@ public sealed class FeesService : IFeesService
         var created = 0;
         var retained = 0;
         var deactivated = 0;
+        var reactivated = 0;
         var protectedCharges = new List<ProtectedFeeChargeResult>();
         decimal total = 0m;
         foreach (var studentId in studentIds)
@@ -701,6 +705,26 @@ public sealed class FeesService : IFeesService
             foreach (var (structureId, line) in expectedLines)
             {
                 if (retainedKeys.Contains((structureId, line.Id))) continue;
+                var provenanceKey = (studentId, FeeStructureLineId: line.Id);
+                if (chargesByKey.TryGetValue(provenanceKey, out var historicalCharge))
+                {
+                    if (historicalCharge.AmountPaid == 0m && !allocatedChargeIds.Contains(historicalCharge.Id))
+                    {
+                        historicalCharge.Reactivate();
+                        reactivated++;
+                        retainedKeys.Add((structureId, line.Id));
+                        continue;
+                    }
+
+                    protectedCharges.Add(new ProtectedFeeChargeResult(
+                        historicalCharge.Id,
+                        historicalCharge.StudentId,
+                        historicalCharge.Description,
+                        historicalCharge.Amount,
+                        historicalCharge.AmountPaid));
+                    retainedKeys.Add((structureId, line.Id));
+                    continue;
+                }
                 _database.StudentFeeCharges.Add(new StudentFeeCharge(
                     tenantId, studentId, structure.AcademicSessionId, structure.AcademicTermId,
                     line.FeeItemId, structureId, line.Id, line.FeeItem.Name, line.Amount));
@@ -713,7 +737,7 @@ public sealed class FeesService : IFeesService
         await _database.SaveChangesAsync(cancellationToken);
         return new GenerateChargesResult(
             structure.Id, selectedTargetIds.Count, created, total, retained,
-            deactivated, protectedCharges.Count, protectedCharges);
+            reactivated, deactivated, protectedCharges.Count, protectedCharges);
     }
 
     public async Task<ReconcileTermFeesResult> ReconcileTermFeesAsync(
