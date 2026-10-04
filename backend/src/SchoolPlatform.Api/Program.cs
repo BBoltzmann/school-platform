@@ -54,6 +54,17 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IAuthenticationService,
     AuthenticationService>();
+builder.Services.AddScoped<IPlatformAuthenticationService, PlatformAuthenticationService>();
+builder.Services.AddScoped<IPlatformAdminService, PlatformAdminService>();
+builder.Services.AddHttpClient<IWebsiteImportService, WebsiteImportService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SchoolPlatformWebsiteReview/1.0");
+    client.MaxResponseContentBufferSize = 1_000_000;
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AllowAutoRedirect = false
+});
 
 builder.Services.AddScoped<
     IPasswordHasher<User>,
@@ -101,7 +112,16 @@ builder.Services
                     context.HttpContext.RequestAborted);
                 if (user is null || !user.IsActive || (user.SecurityStamp is not null
                     && user.SecurityStamp != context.Principal?.FindFirstValue("security_stamp")))
+                {
                     context.Fail("Session expired. Sign in again.");
+                    return;
+                }
+
+                var tenantClaim = context.Principal?.FindFirstValue("tenant_id");
+                if (!string.IsNullOrWhiteSpace(tenantClaim)
+                    && (!Guid.TryParse(tenantClaim, out var tenantId)
+                        || !await database.Tenants.AsNoTracking().AnyAsync(x => x.Id == tenantId && x.IsActive, context.HttpContext.RequestAborted)))
+                    context.Fail("School access is suspended.");
             }
         };
         options.TokenValidationParameters =
@@ -226,6 +246,17 @@ app.Use(async (context, next) =>
     await next();
 });
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    var isPlatformToken = context.User.Identity?.IsAuthenticated == true
+        && context.User.HasClaim("platform_role", PlatformRoles.SuperAdmin);
+    if (isPlatformToken && !context.Request.Path.StartsWithSegments("/api/platform-admin"))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+    await next();
+});
 app.UseAuthorization();
 
 app.MapGet("/", () => Results.Ok(new
@@ -631,6 +662,7 @@ SchoolPlatform.Api.Endpoints.InventoryEndpoints.MapInventoryEndpoints(app);
 SchoolPlatform.Api.Endpoints.FeesEndpoints.MapFeesEndpoints(app);
 
 SchoolPlatform.Api.Endpoints.AuthenticationRecoveryEndpoints.MapAuthenticationRecoveryEndpoints(app);
+SchoolPlatform.Api.Endpoints.PlatformAdminEndpoints.MapPlatformAdminEndpoints(app);
 
 app.Run();
 

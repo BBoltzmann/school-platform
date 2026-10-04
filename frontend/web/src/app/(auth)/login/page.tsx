@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 
 import {
   BookOpenCheck,
@@ -7,24 +8,32 @@ import {
 } from "lucide-react";
 
 import { LoginForm } from "@/components/auth/login-form";
+import { getBackendUrl } from "@/lib/api/backend-url";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ tenantSlug?: string; reset?: string }> }) {
   const query = await searchParams;
   const tenantSlug = typeof query.tenantSlug === "string" ? query.tenantSlug : "antioch-college";
+  let branding: { name?: string; motto?: string; logoDataUrl?: string; primaryColor?: string; secondaryColor?: string } | null = null;
+  try {
+    branding = await fetch(`${getBackendUrl()}/api/public/schools/${encodeURIComponent(tenantSlug)}/branding`, { cache: "no-store" }).then(async response => response.ok ? await response.json() : null);
+  } catch {
+    branding = null;
+  }
+  const schoolName = branding?.name ?? (tenantSlug === "antioch-college" ? "Antioch Royal College" : tenantSlug);
+  const primary = branding?.primaryColor ?? "#F5D900";
+  const secondary = branding?.secondaryColor ?? "#0B0B0B";
   return (
-    <main className="grid min-h-screen bg-background lg:grid-cols-[1.05fr_0.95fr]">
+    <main className="grid min-h-screen bg-background lg:grid-cols-[1.05fr_0.95fr]" style={{ "--tenant-primary": primary, "--tenant-secondary": secondary } as CSSProperties}>
       <section className="relative hidden overflow-hidden bg-black p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,217,0,0.16),transparent_35%)]" />
 
         <div className="relative z-10">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-tenant-primary font-black text-black">
-              ARC
-            </div>
+            {branding?.logoDataUrl ? <img src={branding.logoDataUrl} alt={`${schoolName} logo`} className="h-14 w-14 rounded-lg object-contain" /> : <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-tenant-primary font-black text-black">{schoolName.slice(0, 3).toUpperCase()}</div>}
 
             <div>
               <div className="text-xl font-bold">
-                Antioch Royal College
+                {schoolName}
               </div>
 
               <div className="mt-1 text-sm text-white/55">
@@ -36,7 +45,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
         <div className="relative z-10 max-w-xl">
           <div className="mb-5 text-sm font-bold uppercase tracking-[0.18em] text-tenant-primary">
-            Godliness · Diligence · Excellence
+            {branding?.motto ?? "School Administration Platform"}
           </div>
 
           <h1 className="text-4xl font-bold leading-tight xl:text-5xl">
@@ -76,7 +85,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         </div>
 
         <div className="relative z-10 text-xs text-white/35">
-          Antioch Royal College
+          {schoolName}
         </div>
       </section>
 
@@ -90,7 +99,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
               <div>
                 <div className="font-bold">
-                  Antioch Royal College
+                {schoolName}
                 </div>
 
                 <div className="text-xs text-muted-foreground">

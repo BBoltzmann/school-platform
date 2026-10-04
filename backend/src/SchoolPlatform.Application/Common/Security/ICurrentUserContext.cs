@@ -4,6 +4,8 @@ public interface ICurrentUserContext
 {
     bool IsAuthenticated { get; }
 
+    bool IsPlatformSuperAdmin { get; }
+
     Guid UserId { get; }
 
     Guid MembershipId { get; }

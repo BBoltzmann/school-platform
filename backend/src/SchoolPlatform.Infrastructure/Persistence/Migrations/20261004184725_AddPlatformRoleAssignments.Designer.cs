@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SchoolPlatform.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using SchoolPlatform.Infrastructure.Persistence;
 namespace SchoolPlatform.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(SchoolPlatformDbContext))]
-    partial class SchoolPlatformDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261004184725_AddPlatformRoleAssignments")]
+    partial class AddPlatformRoleAssignments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2145,82 +2148,6 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.ToTable("tenants", (string)null);
                 });
 
-            modelBuilder.Entity("SchoolPlatform.Domain.Tenancy.TenantProfile", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AccentColor")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Address")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("ContactEmail")
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)");
-
-                    b.Property<string>("ContactPhone")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("IconDataUrl")
-                        .HasColumnType("text");
-
-                    b.Property<string>("LogoDataUrl")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Mission")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<string>("Motto")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("PrimaryColor")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("SecondaryColor")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("ShortAbout")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Vision")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<string>("WebsiteUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TenantId")
-                        .IsUnique();
-
-                    b.ToTable("tenant_profiles", (string)null);
-                });
-
             modelBuilder.Entity("SchoolPlatform.Domain.Timetabling.ClassSubjectRequirement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3055,17 +2982,6 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                         .WithMany("Campuses")
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("SchoolPlatform.Domain.Tenancy.TenantProfile", b =>
-                {
-                    b.HasOne("SchoolPlatform.Domain.Tenancy.Tenant", "Tenant")
-                        .WithOne()
-                        .HasForeignKey("SchoolPlatform.Domain.Tenancy.TenantProfile", "TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Tenant");

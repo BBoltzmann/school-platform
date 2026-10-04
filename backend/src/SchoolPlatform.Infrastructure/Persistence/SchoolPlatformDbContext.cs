@@ -20,6 +20,7 @@ public sealed class SchoolPlatformDbContext : DbContext
 
     public DbSet<Tenant> Tenants =>
         Set<Tenant>();
+    public DbSet<TenantProfile> TenantProfiles => Set<TenantProfile>();
 
     public DbSet<Campus> Campuses =>
         Set<Campus>();
@@ -31,6 +32,9 @@ public sealed class SchoolPlatformDbContext : DbContext
 
     public DbSet<User> Users =>
         Set<User>();
+
+    public DbSet<PlatformRoleAssignment> PlatformRoleAssignments =>
+        Set<PlatformRoleAssignment>();
 
     public DbSet<TenantMembership> TenantMemberships =>
         Set<TenantMembership>();

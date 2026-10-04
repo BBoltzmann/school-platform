@@ -26,5 +26,8 @@ public sealed class Tenant : Entity
 
     public bool IsActive { get; private set; } = true;
 
+    public void Suspend() => IsActive = false;
+    public void Reactivate() => IsActive = true;
+
     public ICollection<Campus> Campuses { get; private set; } = new List<Campus>();
 }

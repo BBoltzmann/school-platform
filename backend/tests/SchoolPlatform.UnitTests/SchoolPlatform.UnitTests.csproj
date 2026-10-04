@@ -22,5 +22,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/SchoolPlatform.Application/SchoolPlatform.Application.csproj" />
+    <ProjectReference Include="../../src/SchoolPlatform.Infrastructure/SchoolPlatform.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

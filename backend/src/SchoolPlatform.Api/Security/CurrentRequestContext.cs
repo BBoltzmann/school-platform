@@ -23,6 +23,9 @@ public sealed class CurrentRequestContext :
     public bool IsAuthenticated =>
         Principal.Identity?.IsAuthenticated == true;
 
+    public bool IsPlatformSuperAdmin =>
+        Principal.FindFirst("platform_role")?.Value == "PlatformSuperAdmin";
+
     public Guid UserId =>
         GetRequiredGuidClaim(ClaimTypes.NameIdentifier);
 

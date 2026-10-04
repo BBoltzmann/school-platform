@@ -34,3 +34,6 @@
 
 # Logs
 *.log
+
+# Local database backups
+backups/
