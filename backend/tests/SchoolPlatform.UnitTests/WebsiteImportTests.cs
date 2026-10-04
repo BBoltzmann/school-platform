@@ -26,9 +26,60 @@ public sealed class WebsiteImportTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => new WebsiteImportService(client).ScanAsync(url));
     }
 
+    [Fact]
+    public async Task DiscoveryCombinesAboutAndContactPagesWithPartialWarnings()
+    {
+        using var client = new HttpClient(new MapHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/" => "<html><body><a href='/about-us'>About Us</a><a href='/contact'>Contact</a></body></html>",
+            "/about-us" => "<html><body><h2>Our Mission</h2><p>Serve families with excellence.</p><h2>Our Vision</h2><p>A thriving learning community.</p><h2>Core Values</h2><ul><li>Integrity</li><li>Diligence</li></ul></body></html>",
+            "/contact" => "<html><body><h2>Contact</h2><p>office@example.com +244 923 000 000 12 School Road</p></body></html>",
+            _ => throw new HttpRequestException()
+        }));
+        var draft = await new WebsiteImportService(client).ScanAsync("https://example.com/");
+        Assert.Equal("Serve families with excellence.", draft.Mission);
+        Assert.Equal("A thriving learning community.", draft.Vision);
+        Assert.Contains("office@example.com", draft.Emails);
+        Assert.True(draft.PagesVisited!.Count >= 3);
+        Assert.Contains("https://example.com/contact-us", draft.FailedPages!);
+    }
+
+    [Fact]
+    public async Task HomepageFailureStillReturnsPartialAboutResult()
+    {
+        using var client = new HttpClient(new MapHandler(request => request.RequestUri!.AbsolutePath == "/"
+            ? throw new TaskCanceledException()
+            : request.RequestUri.AbsolutePath == "/about-us"
+                ? "<html><body><h1>About Us</h1><p>Our school serves the community.</p></body></html>"
+                : throw new HttpRequestException()));
+        var draft = await new WebsiteImportService(client).ScanAsync("https://example.com/");
+        Assert.Equal("Our school serves the community.", draft.Description);
+        Assert.NotEmpty(draft.Warnings!);
+        Assert.Contains("https://example.com/", draft.FailedPages!);
+    }
+
+    [Fact]
+    public async Task GenericContentTypeWithHtmlIsAcceptedButBinaryIsRejected()
+    {
+        using var client = new HttpClient(new MapHandler(request => request.RequestUri!.AbsolutePath == "/"
+            ? "<!doctype html><html><head><title>School</title></head><body><h1>Welcome</h1></body></html>"
+            : "\u0000\u0001\u0002"));
+        var draft = await new WebsiteImportService(client).ScanAsync("https://example.com/");
+        Assert.Equal("School", draft.Title);
+    }
+
     private sealed class Handler(string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "text/html") });
+    }
+
+    private sealed class MapHandler(Func<HttpRequestMessage, string> resolver) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var body = resolver(request);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "text/html") });
+        }
     }
 }

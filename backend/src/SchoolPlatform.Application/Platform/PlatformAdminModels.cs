@@ -79,7 +79,28 @@ public interface IPlatformAdminService
 
 public sealed record UpdateTenantBrandingRequest(string? WebsiteUrl, string? ContactEmail, string? ContactPhone, string? Address, string? Motto, string? Mission, string? Vision, string? ShortAbout, string? LogoDataUrl, string? IconDataUrl, string? PrimaryColor, string? SecondaryColor, string? AccentColor);
 public sealed record TenantBrandingResult(string TenantId, string Name, string Slug, string? WebsiteUrl, string? ContactEmail, string? ContactPhone, string? Address, string? Motto, string? Mission, string? Vision, string? ShortAbout, string? LogoDataUrl, string? IconDataUrl, string PrimaryColor, string SecondaryColor, string AccentColor);
-public sealed record WebsiteImportDraft(string FinalUrl, string? Title, IReadOnlyCollection<string> NameCandidates, string? Description, IReadOnlyCollection<string> LogoCandidates, IReadOnlyCollection<string> IconCandidates, IReadOnlyCollection<string> Emails, IReadOnlyCollection<string> Phones, IReadOnlyCollection<string> SocialLinks, IReadOnlyCollection<string> ColorCandidates, string? MottoCandidate);
+public sealed record WebsiteImportDraft(
+    string FinalUrl,
+    string? Title,
+    IReadOnlyCollection<string> NameCandidates,
+    string? Description,
+    IReadOnlyCollection<string> LogoCandidates,
+    IReadOnlyCollection<string> IconCandidates,
+    IReadOnlyCollection<string> Emails,
+    IReadOnlyCollection<string> Phones,
+    IReadOnlyCollection<string> SocialLinks,
+    IReadOnlyCollection<string> ColorCandidates,
+    string? MottoCandidate,
+    string? Mission = null,
+    string? Vision = null,
+    IReadOnlyCollection<string>? CoreValues = null,
+    IReadOnlyCollection<string>? PagesVisited = null,
+    IReadOnlyCollection<string>? Warnings = null,
+    IReadOnlyCollection<string>? FailedPages = null,
+    IReadOnlyDictionary<string, string>? Sources = null,
+    IReadOnlyCollection<WebsiteColorCandidate>? ColorCandidatesDetailed = null);
+
+public sealed record WebsiteColorCandidate(string Value, string? RoleSuggestion, string Source, string SourceUrl);
 
 public interface IPlatformAuthenticationService
 {
