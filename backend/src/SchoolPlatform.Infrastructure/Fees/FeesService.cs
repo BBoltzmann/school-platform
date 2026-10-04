@@ -988,6 +988,31 @@ public sealed class FeesService : IFeesService
         return ToChargeResult(charge, charge.FeeItem.Name, structureName);
     }
 
+    public async Task RemoveStudentChargeAsync(
+        Guid studentId,
+        Guid chargeId,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var charge = await _database.StudentFeeCharges
+            .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Id == chargeId && x.StudentId == studentId && x.IsActive, cancellationToken)
+            ?? throw new InvalidOperationException("Charge was not found for this student.");
+        if (charge.FeeStructureLineId.HasValue)
+        {
+            var line = await _database.FeeStructureLines.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.TenantId == tenantId && x.Id == charge.FeeStructureLineId.Value, cancellationToken);
+            if (line?.IsRequired == true)
+                throw new InvalidOperationException("Required generated charges cannot be removed from an individual account.");
+        }
+        var hasAllocations = await _database.FeePaymentAllocations.AnyAsync(
+            x => x.TenantId == tenantId && x.StudentFeeChargeId == chargeId,
+            cancellationToken);
+        if (charge.AmountPaid > 0m || hasAllocations)
+            throw new InvalidOperationException("This charge has payment history and cannot be removed. Reverse or reallocate the payment first.");
+        charge.Deactivate();
+        await _database.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<StudentFeeAccountResult> GetStudentAccountAsync(
         Guid studentId,
         Guid academicTermId,

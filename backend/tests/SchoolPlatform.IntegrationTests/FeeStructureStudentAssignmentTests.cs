@@ -358,6 +358,49 @@ public sealed class FeeStructureStudentAssignmentTests
     }
 
     [PostgresTimetableFact]
+    public async Task OptionalComponentIsolatedToTheSelectedStudent()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await database.Tenants.SingleAsync();
+        var session = new AcademicSession(tenant.Id, "2026/2027", new(2026, 9, 1), new(2027, 7, 1), true);
+        var term = new AcademicTerm(tenant.Id, session.Id, "First Term", new(2026, 9, 1), new(2026, 12, 20), 1);
+        var campus = new Campus(tenant.Id, "Main campus");
+        var level = new AcademicLevel(tenant.Id, "JSS", "Junior", 1);
+        var classGroup = new ClassGroup(tenant.Id, campus.Id, level.Id, "JSS 1");
+        var students = Enumerable.Range(1, 3).Select(index => NewStudent(tenant.Id, $"ISOLATE-{index}", $"Student {index}")).ToArray();
+        var enrollments = students.Select(student => new StudentEnrollment(tenant.Id, student.Id, session.Id, level.Id, classGroup.Id, new(2026, 9, 1), true));
+        var tuition = new FeeItem(tenant.Id, "Tuition", "TUI", null);
+        var books = new FeeItem(tenant.Id, "Books", "BOOKS", null);
+        var structure = new FeeStructure(tenant.Id, session.Id, term.Id, "JSS 1 Standard", "Class", classGroup.Id);
+        database.AddRange(session, term, campus, level, classGroup, structure, tuition, books);
+        database.AddRange(students);
+        database.AddRange(enrollments);
+        var tuitionLine = new FeeStructureLine(tenant.Id, structure.Id, tuition.Id, 60000m, true);
+        var booksLine = new FeeStructureLine(tenant.Id, structure.Id, books.Id, 20000m, false);
+        database.AddRange(tuitionLine, booksLine);
+        await database.SaveChangesAsync();
+        var service = new FeesService(database, new FixedTenantContext(tenant.Id));
+        await service.ReplaceAssignedStudentsAsync(structure.Id, new(students.Select(x => x.Id).ToArray()));
+        var generated = await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(3, generated.ChargesCreated);
+        Assert.Equal(0, await database.StudentFeeCharges.CountAsync(x => x.FeeStructureLineId == booksLine.Id && x.IsActive));
+        await service.AddOptionalFeeComponentAsync(students[0].Id, new(term.Id, booksLine.Id, 25000m));
+        foreach (var student in students)
+        {
+            var account = await service.GetStudentAccountAsync(student.Id, term.Id);
+            Assert.Equal(student.Id == students[0].Id ? 1 : 0, account.Charges.Count(x => x.FeeStructureLineId == booksLine.Id));
+        }
+        await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(1, await database.StudentFeeCharges.CountAsync(x => x.FeeStructureLineId == booksLine.Id && x.IsActive));
+        await service.RemoveStudentChargeAsync(students[0].Id, await database.StudentFeeCharges.Where(x => x.FeeStructureLineId == booksLine.Id).Select(x => x.Id).SingleAsync());
+        await service.GenerateChargesAsync(structure.Id);
+        Assert.Equal(0, await database.StudentFeeCharges.CountAsync(x => x.FeeStructureLineId == booksLine.Id && x.IsActive));
+    }
+
+    [PostgresTimetableFact]
     public async Task OptionalComponentKeepsCustomAmountAndPaymentAllocation()
     {
         using var factory = new AuthenticationFactory();

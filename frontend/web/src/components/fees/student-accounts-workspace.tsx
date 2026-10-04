@@ -103,6 +103,9 @@ export function StudentAccountsWorkspace({
   const [optionalAmount, setOptionalAmount] = useState("");
   const [optionalSaving, setOptionalSaving] = useState(false);
   const [optionalMessage, setOptionalMessage] = useState<string | null>(null);
+  const [manualDescription, setManualDescription] = useState("");
+  const [manualFeeItemId, setManualFeeItemId] = useState(setup.feeItems[0]?.id ?? "");
+  const [manualAmount, setManualAmount] = useState("");
 
   async function loadAccount() {
     if (
@@ -195,6 +198,24 @@ export function StudentAccountsWorkspace({
     const result = await response.json();
     if (!response.ok) { setOptionalMessage(result.error ?? "Unable to update optional charge."); return; }
     setOptionalMessage("Optional charge updated.");
+    await loadAccount();
+  }
+
+  async function addManualCharge() {
+    const amount = Number(manualAmount);
+    if (!manualDescription.trim() || !manualFeeItemId || !Number.isFinite(amount) || amount <= 0) { setOptionalMessage("Enter a description, fee item, and valid amount for the manual charge."); return; }
+    const response = await fetch(`/api/fees/students/${studentId}/charges`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ academicTermId, feeItemId: manualFeeItemId, description: manualDescription.trim(), amount }) });
+    const result = await response.json();
+    if (!response.ok) { setOptionalMessage(result.error ?? "Unable to add manual charge."); return; }
+    setManualDescription(""); setManualAmount(""); setOptionalMessage("Manual charge added to the account."); await loadAccount();
+  }
+
+  async function removeCharge(charge: Account["charges"][number]) {
+    if (!window.confirm(`Remove ${charge.description} ${money(charge.amount)} from ${account?.studentName} — ${account?.admissionNumber}?`)) return;
+    const response = await fetch(`/api/fees/students/${studentId}/charges/${charge.id}`, { method: "DELETE" });
+    const result = await response.json();
+    if (!response.ok) { setOptionalMessage(result.error ?? "Unable to remove charge."); return; }
+    setOptionalMessage("Charge removed from the active account.");
     await loadAccount();
   }
 
@@ -358,6 +379,7 @@ export function StudentAccountsWorkspace({
               <Button onClick={addOptionalComponent} disabled={optionalSaving || !optionalLineId}>{optionalSaving && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}Add to Account</Button>
             </div>
             {optionalMessage && <p className="mt-3 text-sm text-muted-foreground">{optionalMessage}</p>}
+            <div className="mt-4 border-t pt-4"><div className="text-sm font-medium">Add Manual Charge</div><div className="mt-2 grid gap-3 md:grid-cols-[1fr_180px_180px_auto] md:items-end"><input value={manualDescription} onChange={event => setManualDescription(event.target.value)} placeholder="Description" className={inputClass} /><select value={manualFeeItemId} onChange={event => setManualFeeItemId(event.target.value)} className={inputClass}>{setup.feeItems.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input type="number" min="0.01" value={manualAmount} onChange={event => setManualAmount(event.target.value)} placeholder="Amount" className={inputClass} /><Button type="button" variant="outline" onClick={addManualCharge}>Add Charge</Button></div></div>
           </section>
 
           <section className="overflow-hidden rounded-xl border bg-card">
@@ -439,7 +461,7 @@ export function StudentAccountsWorkspace({
                           {money(
                             charge.balance
                           )}
-                          {charge.isRequired === false && charge.amountPaid < charge.amount && <button type="button" onClick={() => void editOptionalCharge(charge)} className="ml-2 text-xs font-medium text-tenant-primary hover:underline">Edit</button>}
+                            {charge.isRequired !== true && charge.amountPaid < charge.amount && <><button type="button" onClick={() => void editOptionalCharge(charge)} className="ml-2 text-xs font-medium text-tenant-primary hover:underline">Edit</button><button type="button" onClick={() => void removeCharge(charge)} className="ml-2 text-xs font-medium text-red-700 hover:underline">Remove</button></>}
                         </td>
                       </tr>
                     )

@@ -68,6 +68,11 @@ public interface IFeesService
         UpdateOptionalFeeChargeRequest request,
         CancellationToken cancellationToken = default);
 
+    Task RemoveStudentChargeAsync(
+        Guid studentId,
+        Guid chargeId,
+        CancellationToken cancellationToken = default);
+
     Task<StudentFeeAccountResult> GetStudentAccountAsync(
         Guid studentId,
         Guid academicTermId,

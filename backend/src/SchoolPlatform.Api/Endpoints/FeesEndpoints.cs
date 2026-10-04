@@ -276,6 +276,23 @@ public static class FeesEndpoints
                 return await ExecuteAsync(() => service.UpdateOptionalFeeChargeAsync(studentId, chargeId, request, cancellationToken));
             });
 
+        group.MapDelete(
+            "/students/{studentId:guid}/charges/{chargeId:guid}",
+            async (
+                Guid studentId,
+                Guid chargeId,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.update")) return Results.Forbid();
+                return await ExecuteAsync(async () =>
+                {
+                    await service.RemoveStudentChargeAsync(studentId, chargeId, cancellationToken);
+                    return new { success = true };
+                });
+            });
+
         group.MapGet(
             "/students/{studentId:guid}/account",
             async (
