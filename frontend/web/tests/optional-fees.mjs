@@ -23,3 +23,14 @@ test("optional fee components are available before recording a payment", () => {
   assert.match(workspace, /optional-components/);
   assert.match(workspace, /next payment allocation/);
 });
+
+test("student accounts expose payment history and a scoped void operation", () => {
+  const workspace = read("components/fees/student-accounts-workspace.tsx");
+  const route = read("app/api/fees/students/[studentId]/payments/[paymentId]/void/route.ts");
+  assert.match(workspace, /Payment History/);
+  assert.match(workspace, /allocations/);
+  assert.match(workspace, /Voided/);
+  assert.match(workspace, /Void Payment/);
+  assert.match(route, /payments\/\$\{paymentId\}\/void/);
+  assert.match(route, /authenticatedBackendFetch/);
+});

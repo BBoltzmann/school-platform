@@ -88,6 +88,12 @@ public interface IFeesService
         ReverseFeePaymentRequest request,
         CancellationToken cancellationToken = default);
 
+    Task VoidPaymentAsync(
+        Guid studentId,
+        Guid paymentId,
+        ReverseFeePaymentRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<OutstandingStudentResult>> GetOutstandingAsync(
         Guid academicTermId,
         CancellationToken cancellationToken = default);

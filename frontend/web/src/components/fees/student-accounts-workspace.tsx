@@ -47,6 +47,16 @@ type Account = {
     receiptNumber: string;
     isReversed: boolean;
     createdAtUtc: string;
+    reference: string | null;
+    notes: string | null;
+    allocations: {
+      studentFeeChargeId: string;
+      description: string;
+      feeItemName: string;
+      feeStructureName: string | null;
+      chargeType: string;
+      amountAllocated: number;
+    }[];
   }[];
 };
 
@@ -216,6 +226,32 @@ export function StudentAccountsWorkspace({
     const result = await response.json();
     if (!response.ok) { setOptionalMessage(result.error ?? "Unable to remove charge."); return; }
     setOptionalMessage("Charge removed from the active account.");
+    await loadAccount();
+  }
+
+  async function voidPayment(payment: Account["payments"][number]) {
+    const student = setup.students.find(item => item.id === studentId);
+    const term = setup.terms.find(item => item.id === academicTermId);
+    const reason = window.prompt(
+      `Void ${money(payment.amount)} payment for ${account?.studentName} — ${account?.admissionNumber}${student?.className ? ` — ${student.className}` : ""}?\nTerm: ${term?.name ?? "Selected term"}\nReceipt: ${payment.receiptNumber}\nDate: ${new Date(payment.createdAtUtc).toLocaleDateString()}\nMethod: ${payment.paymentMethod}\nReason (required):`,
+    );
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setError("A reason is required to void a payment.");
+      return;
+    }
+    const response = await fetch(`/api/fees/students/${studentId}/payments/${payment.id}/void`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setError(result.error ?? "Unable to void payment.");
+      return;
+    }
+    setError(null);
+    setOptionalMessage("Payment voided. Outstanding balances have been restored.");
     await loadAccount();
   }
 
@@ -461,6 +497,9 @@ export function StudentAccountsWorkspace({
                           {money(
                             charge.balance
                           )}
+                          <span className="ml-2 rounded-full border px-2 py-1 text-[10px] font-normal">
+                            {charge.amountPaid <= 0 ? "Unpaid" : charge.balance <= 0 ? "Paid" : "Partially Paid"}
+                          </span>
                             {charge.isRequired !== true && charge.amountPaid < charge.amount && <><button type="button" onClick={() => void editOptionalCharge(charge)} className="ml-2 text-xs font-medium text-tenant-primary hover:underline">Edit</button><button type="button" onClick={() => void removeCharge(charge)} className="ml-2 text-xs font-medium text-red-700 hover:underline">Remove</button></>}
                         </td>
                       </tr>
@@ -469,6 +508,62 @@ export function StudentAccountsWorkspace({
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="overflow-hidden rounded-xl border bg-card">
+            <div className="border-b p-5">
+              <h2 className="font-semibold">Payment History</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Recorded payments and their persisted allocations for this term.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="border-b bg-muted/30 text-left">
+                  <tr>
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Receipt</th>
+                    <th className="px-4 py-3 text-right">Received</th>
+                    <th className="px-4 py-3 text-right">Allocated</th>
+                    <th className="px-4 py-3 text-right">Credit</th>
+                    <th className="px-4 py-3">Method</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {account.payments.map(payment => (
+                    <tr key={payment.id}>
+                      <td className="px-4 py-3">{new Date(payment.createdAtUtc).toLocaleDateString()}</td>
+                      <td className="px-4 py-3 font-medium">{payment.receiptNumber}</td>
+                      <td className="px-4 py-3 text-right">{money(payment.amount)}</td>
+                      <td className="px-4 py-3 text-right">{money(payment.allocatedAmount)}</td>
+                      <td className="px-4 py-3 text-right">{money(payment.creditAmount)}</td>
+                      <td className="px-4 py-3">{payment.paymentMethod}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full border px-2 py-1 text-xs ${payment.isReversed ? "text-red-700" : "text-green-700"}`}>
+                          {payment.isReversed ? "Voided" : "Completed"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {!payment.isReversed && <button type="button" onClick={() => void voidPayment(payment)} className="text-xs font-medium text-red-700 hover:underline">Void Payment</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {account.payments.map(payment => (
+              payment.allocations.length > 0 && (
+                <div key={`${payment.id}-allocations`} className="border-t px-5 py-3 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{payment.receiptNumber} allocations:</span>{" "}
+                  {payment.allocations.map((allocation, index) => (
+                    <span key={allocation.studentFeeChargeId}>
+                      {index > 0 ? ", " : ""}{allocation.description} ({allocation.chargeType}) {money(allocation.amountAllocated)}
+                    </span>
+                  ))}
+                </div>
+              )
+            ))}
+            {account.payments.length === 0 && <p className="p-5 text-sm text-muted-foreground">No payments recorded for this term.</p>}
           </section>
         </>
       )}

@@ -473,6 +473,47 @@ public sealed class FeeStructureStudentAssignmentTests
         Assert.Contains("not found in this school", exception.Message);
     }
 
+    [PostgresTimetableFact]
+    public async Task VoidingPaymentReversesOnlyItsAllocationsAndKeepsHistory()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await database.Tenants.SingleAsync();
+        var session = new AcademicSession(tenant.Id, "2026/2027", new(2026, 9, 1), new(2027, 7, 1), true);
+        var term = new AcademicTerm(tenant.Id, session.Id, "First Term", new(2026, 9, 1), new(2026, 12, 20), 1);
+        var campus = new Campus(tenant.Id, "Main campus");
+        var level = new AcademicLevel(tenant.Id, "JSS", "Junior", 1);
+        var classGroup = new ClassGroup(tenant.Id, campus.Id, level.Id, "JSS 2");
+        var student = NewStudent(tenant.Id, "VOID-1", "Void");
+        var enrollment = new StudentEnrollment(tenant.Id, student.Id, session.Id, level.Id, classGroup.Id, new(2026, 9, 1), true);
+        var item = new FeeItem(tenant.Id, "Tuition", "TUI", null);
+        var structure = new FeeStructure(tenant.Id, session.Id, term.Id, "Void test", "Class", classGroup.Id);
+        database.AddRange(session, term, campus, level, classGroup, student, enrollment, item, structure);
+        var line = new FeeStructureLine(tenant.Id, structure.Id, item.Id, 60000m, true);
+        database.Add(line);
+        await database.SaveChangesAsync();
+        var service = new FeesService(database, new FixedTenantContext(tenant.Id));
+        await service.ReplaceAssignedStudentsAsync(structure.Id, new([student.Id]));
+        await service.GenerateChargesAsync(structure.Id);
+        var first = await service.RecordPaymentAsync(student.Id, new(term.Id, 20000m, "Cash", "VOID-A", null));
+        var second = await service.RecordPaymentAsync(student.Id, new(term.Id, 40000m, "Cash", "VOID-B", null));
+
+        await service.VoidPaymentAsync(student.Id, first.Id, new("Entered in error"));
+
+        var charge = await database.StudentFeeCharges.SingleAsync(x => x.FeeStructureLineId == line.Id && x.StudentId == student.Id);
+        Assert.Equal(40000m, charge.AmountPaid);
+        Assert.True(await database.FeePayments.Where(x => x.Id == first.Id).Select(x => x.IsReversed).SingleAsync());
+        Assert.False(await database.FeePayments.Where(x => x.Id == second.Id).Select(x => x.IsReversed).SingleAsync());
+        var account = await service.GetStudentAccountAsync(student.Id, term.Id);
+        Assert.Equal(40000m, account.AppliedPayments);
+        Assert.Equal(20000m, account.OutstandingBalance);
+        Assert.Contains(account.Payments, payment => payment.Id == first.Id && payment.IsReversed);
+        Assert.Contains(account.Payments, payment => payment.Id == second.Id && !payment.IsReversed);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.VoidPaymentAsync(student.Id, first.Id, new("Again")));
+    }
+
     private static Student NewStudent(Guid tenantId, string admissionNumber, string firstName) =>
         new(
             tenantId,

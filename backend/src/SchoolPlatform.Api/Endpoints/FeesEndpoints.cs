@@ -375,6 +375,35 @@ public static class FeesEndpoints
                 }
             });
 
+        group.MapPost(
+            "/students/{studentId:guid}/payments/{paymentId:guid}/void",
+            async (
+                Guid studentId,
+                Guid paymentId,
+                ReverseFeePaymentRequest request,
+                IFeesService service,
+                ICurrentUserContext currentUser,
+                CancellationToken cancellationToken) =>
+            {
+                if (!currentUser.HasPermission("students.update"))
+                    return Results.Forbid();
+
+                try
+                {
+                    await service.VoidPaymentAsync(
+                        studentId,
+                        paymentId,
+                        request,
+                        cancellationToken);
+                    return Results.Ok(new { success = true });
+                }
+                catch (Exception exception)
+                    when (exception is InvalidOperationException or ArgumentException)
+                {
+                    return Results.BadRequest(new { error = exception.Message });
+                }
+            });
+
         group.MapGet(
             "/outstanding",
             async (

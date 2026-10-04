@@ -1370,6 +1370,22 @@ public sealed class FeesService : IFeesService
         ReverseFeePaymentRequest request,
         CancellationToken cancellationToken = default)
     {
+        var payment = await _database.FeePayments
+            .AsNoTracking()
+            .Where(x => x.TenantId == _tenantContext.TenantId && x.Id == paymentId)
+            .Select(x => new { x.StudentId })
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException("Payment was not found.");
+
+        await VoidPaymentAsync(payment.StudentId, paymentId, request, cancellationToken);
+    }
+
+    public async Task VoidPaymentAsync(
+        Guid studentId,
+        Guid paymentId,
+        ReverseFeePaymentRequest request,
+        CancellationToken cancellationToken = default)
+    {
         var tenantId =
             _tenantContext.TenantId;
 
@@ -1381,7 +1397,8 @@ public sealed class FeesService : IFeesService
                 .SingleOrDefaultAsync(
                     x =>
                         x.Id == paymentId &&
-                        x.TenantId == tenantId,
+                        x.TenantId == tenantId &&
+                        x.StudentId == studentId,
                     cancellationToken)
             ?? throw new InvalidOperationException(
                 "Payment was not found.");
@@ -1392,18 +1409,23 @@ public sealed class FeesService : IFeesService
                 "Payment has already been reversed.");
         }
 
-        foreach (var allocation in payment.Allocations)
+        await using var transaction = await _database.Database.BeginTransactionAsync(cancellationToken);
+        try
         {
-            allocation.StudentFeeCharge
-                .ReversePayment(
-                    allocation.Amount);
+            foreach (var allocation in payment.Allocations)
+            {
+                allocation.StudentFeeCharge.ReversePayment(allocation.Amount);
+            }
+
+            payment.Reverse(request.Reason);
+            await _database.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
-
-        payment.Reverse(
-            request.Reason);
-
-        await _database.SaveChangesAsync(
-            cancellationToken);
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<IReadOnlyCollection<OutstandingStudentResult>>
