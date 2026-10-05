@@ -58,9 +58,73 @@ public sealed class PlatformAdminService(
             .Where(x => x.Id == result.UserId)
             .Select(x => x.PasswordHash == null)
             .SingleAsync(cancellationToken);
-        if (pending)
-            await CreateAdministratorActivationAsync(result.UserId, result.TenantId, request.AdministratorEmail, cancellationToken);
-        return new(await GetSchoolAsync(result.TenantId, cancellationToken), pending);
+        var setupLink = pending
+            ? await CreateAdministratorActivationAsync(result.UserId, result.TenantId, request.AdministratorEmail, cancellationToken)
+            : null;
+        return new(await GetSchoolAsync(result.TenantId, cancellationToken), pending, setupLink);
+    }
+
+    public async Task<PlatformSchoolDeletionEligibility> GetDeletionEligibilityAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        if (!await database.Tenants.AnyAsync(x => x.Id == tenantId, cancellationToken)) throw new InvalidOperationException("School was not found.");
+        var counts = new Dictionary<string, int>();
+        async Task Add(string name, Func<Task<int>> count) => counts[name] = await count();
+        await Add("Students", () => database.Students.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("Staff", () => database.StaffMembers.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("Guardians", () => database.Guardians.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("Admissions", () => database.AdmissionApplications.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("AcademicSessions", () => database.AcademicSessions.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("AcademicTerms", () => database.AcademicTerms.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("AcademicLevels", () => database.AcademicLevels.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("Classes", () => database.ClassGroups.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("Subjects", () => database.Subjects.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("SubjectsOffered", () => database.ClassSubjects.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("Enrollments", () => database.StudentEnrollments.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("StudentGuardians", () => database.StudentGuardians.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("AdmissionDocuments", () => database.AdmissionDocuments.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("StaffAssignments", () => database.TeachingAssignments.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("StaffAvailability", () => database.StaffAvailability.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("TimetableSettings", () => database.TimetableSettings.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("TimetableDays", () => database.TimetableDays.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("TimetableBlocks", () => database.TimetableNonTeachingBlocks.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("ClassSubjectRequirements", () => database.ClassSubjectRequirements.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("ParallelSubjectGroups", () => database.ParallelSubjectGroups.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("Timetables", () => database.GeneratedTimetables.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("TimetableEntries", () => database.GeneratedTimetableEntries.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("Assessments", () => database.AcademicAssessments.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("AssessmentScores", () => database.AcademicAssessmentScores.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("InventoryCategories", () => database.InventoryCategories.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("InventoryItems", () => database.InventoryItems.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("InventoryLocations", () => database.InventoryLocations.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("InventoryTransactions", () => database.InventoryTransactions.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("InventoryLists", () => database.InventoryLists.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("FeeItems", () => database.FeeItems.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("FeeStructures", () => database.FeeStructures.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("FeeStructureLines", () => database.FeeStructureLines.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("FeeAssignments", () => database.FeeStructureStudentAssignments.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("FeeCharges", () => database.StudentFeeCharges.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("FeePayments", () => database.FeePayments.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("PaymentAllocations", () => database.FeePaymentAllocations.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        await Add("AuditLogs", () => database.AuditLogs.CountAsync(x => x.TenantId == tenantId, cancellationToken));
+        foreach (var key in counts.Where(x => x.Value == 0).Select(x => x.Key).ToArray()) counts.Remove(key);
+        return new(counts.Count == 0, counts);
+    }
+
+    public async Task DeleteEmptySchoolAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        var eligibility = await GetDeletionEligibilityAsync(tenantId, cancellationToken);
+        if (!eligibility.CanDeletePermanently) throw new InvalidOperationException("This school contains operational records and cannot be permanently deleted. Suspend it instead.");
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await database.PasswordResetTokens.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
+        await database.TeacherPortalInvitations.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
+        await database.MembershipRoles.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
+        await database.RolePermissions.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
+        await database.Roles.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
+        await database.TenantProfiles.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
+        await database.TenantMemberships.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
+        await database.Campuses.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
+        await database.Tenants.Where(x => x.Id == tenantId).ExecuteDeleteAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task SetSchoolActiveAsync(Guid tenantId, bool active, CancellationToken cancellationToken = default)
@@ -152,26 +216,28 @@ public sealed class PlatformAdminService(
         }).ToList();
     }
 
-    private async Task CreateAdministratorActivationAsync(Guid userId, Guid tenantId, string email, CancellationToken cancellationToken)
+    private async Task<string?> CreateAdministratorActivationAsync(Guid userId, Guid tenantId, string email, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(configuration["PASSWORD_RESET_BASE_URL"], UriKind.Absolute, out var baseUrl)
             || (baseUrl.Scheme != "https" && !(baseUrl.Scheme == "http" && baseUrl.IsLoopback)))
         {
             logger.LogWarning("Administrator activation was not issued because PASSWORD_RESET_BASE_URL is not configured.");
-            return;
+            return null;
         }
         var now = clock.GetUtcNow().UtcDateTime;
         var raw = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         database.PasswordResetTokens.Add(new SchoolPlatform.Domain.Identity.PasswordResetToken(
             userId, tenantId, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))), now.AddMinutes(30)));
         await database.SaveChangesAsync(cancellationToken);
+        var setupLink = new Uri(baseUrl, $"reset-password?token={raw}").AbsoluteUri;
         try
         {
-            await emailSender.SendPasswordResetAsync(email, new Uri(baseUrl, $"reset-password?token={raw}"), cancellationToken);
+            await emailSender.SendPasswordResetAsync(email, new Uri(setupLink), cancellationToken);
         }
         catch (Exception exception)
         {
             logger.LogWarning(exception, "Administrator activation email could not be delivered.");
         }
+        return setupLink;
     }
 }

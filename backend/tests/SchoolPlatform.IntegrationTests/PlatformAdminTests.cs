@@ -113,4 +113,50 @@ public sealed class PlatformAdminTests
         Assert.Equal("Learn and serve", (await service.GetBrandingAsync(tenant.Id)).Motto);
         Assert.Equal("Antioch Royal College", await database.Tenants.Where(x => x.Id == tenant.Id).Select(x => x.Name).SingleAsync());
     }
+
+    [PostgresTimetableFact]
+    public async Task EmptySchoolCanBeDeletedButPopulatedSchoolCannot()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IPlatformAdminService>();
+        var admin = await database.Users.SingleAsync(x => x.Email == AuthenticationFactory.AdminEmail);
+        await service.PromoteSuperAdminAsync(admin.Email);
+
+        var created = await service.CreateSchoolAsync(new CreatePlatformSchoolRequest(
+            "Disposable Demo", "disposable-demo", "Demo campus", "Demo", "Admin", admin.Email));
+        var eligibility = await service.GetDeletionEligibilityAsync(created.School.Summary.TenantId);
+        Assert.True(eligibility.CanDeletePermanently);
+        await service.DeleteEmptySchoolAsync(created.School.Summary.TenantId);
+        Assert.False(await database.Tenants.AnyAsync(x => x.Id == created.School.Summary.TenantId));
+
+        var populatedTenant = await database.Tenants.SingleAsync(x => x.Slug == "antioch-college");
+        var populatedEligibility = await service.GetDeletionEligibilityAsync(populatedTenant.Id);
+        Assert.False(populatedEligibility.CanDeletePermanently);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteEmptySchoolAsync(populatedTenant.Id));
+        Assert.True(await database.Tenants.AnyAsync(x => x.Id == populatedTenant.Id));
+    }
+
+    [PostgresTimetableFact]
+    public async Task NewSchoolAdministratorReceivesOneTimeSetupLink()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IPlatformAdminService>();
+        var admin = await database.Users.SingleAsync(x => x.Email == AuthenticationFactory.AdminEmail);
+        await service.PromoteSuperAdminAsync(admin.Email);
+
+        var created = await service.CreateSchoolAsync(new CreatePlatformSchoolRequest(
+            "Invited Demo", "invited-demo", "Demo campus", "New", "Administrator", "new-admin@example.com"));
+
+        Assert.True(created.AdministratorActivationPending);
+        Assert.Contains("/reset-password?token=", created.AdministratorSetupLink);
+        var invited = await database.Users.SingleAsync(x => x.Email == "new-admin@example.com");
+        Assert.True(await database.TenantMemberships.AnyAsync(x => x.TenantId == created.School.Summary.TenantId && x.UserId == invited.Id));
+        Assert.Single(await database.PasswordResetTokens.Where(x => x.TenantId == created.School.Summary.TenantId && x.UserId == invited.Id).ToListAsync());
+    }
 }

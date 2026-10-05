@@ -62,7 +62,12 @@ public sealed record PlatformCampusSummary(Guid Id, string Name, bool IsActive);
 
 public sealed record PlatformSchoolProvisionedResult(
     PlatformSchoolDetails School,
-    bool AdministratorActivationPending);
+    bool AdministratorActivationPending,
+    string? AdministratorSetupLink = null);
+
+public sealed record PlatformSchoolDeletionEligibility(
+    bool CanDeletePermanently,
+    IReadOnlyDictionary<string, int> BlockingCounts);
 
 public interface IPlatformAdminService
 {
@@ -70,6 +75,8 @@ public interface IPlatformAdminService
     Task<IReadOnlyCollection<PlatformSchoolSummary>> GetSchoolsAsync(CancellationToken cancellationToken = default);
     Task<PlatformSchoolDetails> GetSchoolAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<PlatformSchoolProvisionedResult> CreateSchoolAsync(CreatePlatformSchoolRequest request, CancellationToken cancellationToken = default);
+    Task<PlatformSchoolDeletionEligibility> GetDeletionEligibilityAsync(Guid tenantId, CancellationToken cancellationToken = default);
+    Task DeleteEmptySchoolAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task SetSchoolActiveAsync(Guid tenantId, bool active, CancellationToken cancellationToken = default);
     Task PromoteSuperAdminAsync(string email, CancellationToken cancellationToken = default);
     Task<TenantBrandingResult> GetBrandingAsync(Guid tenantId, CancellationToken cancellationToken = default);

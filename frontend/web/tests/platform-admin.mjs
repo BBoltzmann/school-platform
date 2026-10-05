@@ -16,5 +16,11 @@ test("platform admin has a separate login and school control plane", () => {
   assert.match(login, /setError\(result\.error/);
   assert.match(login, /router\.push\("\/super-admin"\)/);
   assert.match(read("app/super-admin/schools/new/page.tsx"), /Create School/);
+  assert.match(read("app/super-admin/schools/new/page.tsx"), /School created successfully/);
+  assert.match(read("app/super-admin/schools/new/page.tsx"), /Administrator setup link/);
+  assert.match(read("app/super-admin/schools/new/page.tsx"), /if \(saving\) return/);
   assert.match(read("app/super-admin/schools/[tenantId]/page.tsx"), /Suspend School/);
+  assert.match(read("app/super-admin/schools/[tenantId]/page.tsx"), /Danger Zone/);
+  assert.match(read("app/super-admin/schools/[tenantId]/page.tsx"), /Delete school permanently/);
+  assert.match(read("app/api/platform-admin/schools/[tenantId]/deletion-eligibility/route.ts"), /deletion-eligibility/);
 });

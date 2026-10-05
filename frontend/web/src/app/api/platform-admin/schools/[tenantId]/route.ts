@@ -13,3 +13,10 @@ export async function POST(request: Request, context: Context) {
   if (!response) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   return NextResponse.json(await response.json(), { status: response.status });
 }
+export async function DELETE(_: Request, context: Context) {
+  const { tenantId } = await context.params;
+  const response = await authenticatedBackendFetch(`/api/platform-admin/schools/${tenantId}`, { method: "DELETE" });
+  if (!response) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  const body = await response.text();
+  return new NextResponse(body, { status: response.status, headers: { "Content-Type": response.headers.get("content-type") ?? "application/json" } });
+}

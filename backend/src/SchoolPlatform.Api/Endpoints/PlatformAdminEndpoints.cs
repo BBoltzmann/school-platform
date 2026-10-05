@@ -26,6 +26,10 @@ public static class PlatformAdminEndpoints
             await ExecuteIfAuthorized(db, user, () => service.GetSchoolAsync(tenantId, ct)));
         group.MapPost("/schools", async (CreatePlatformSchoolRequest request, SchoolPlatformDbContext db, ICurrentUserContext user, IPlatformAdminService service, CancellationToken ct) =>
             await ExecuteIfAuthorized(db, user, () => service.CreateSchoolAsync(request, ct), true));
+        group.MapGet("/schools/{tenantId:guid}/deletion-eligibility", async (Guid tenantId, SchoolPlatformDbContext db, ICurrentUserContext user, IPlatformAdminService service, CancellationToken ct) =>
+            await ExecuteIfAuthorized(db, user, () => service.GetDeletionEligibilityAsync(tenantId, ct)));
+        group.MapDelete("/schools/{tenantId:guid}", async (Guid tenantId, SchoolPlatformDbContext db, ICurrentUserContext user, IPlatformAdminService service, CancellationToken ct) =>
+            await ExecuteIfAuthorized(db, user, async () => { await service.DeleteEmptySchoolAsync(tenantId, ct); return new { success = true }; }));
         group.MapPost("/schools/{tenantId:guid}/status", async (Guid tenantId, SetPlatformSchoolStatusRequest request, SchoolPlatformDbContext db, ICurrentUserContext user, IPlatformAdminService service, CancellationToken ct) =>
             await ExecuteIfAuthorized(db, user, async () => { await service.SetSchoolActiveAsync(tenantId, request.IsActive, ct); return new { success = true }; }, true));
         group.MapGet("/schools/{tenantId:guid}/branding", async (Guid tenantId, SchoolPlatformDbContext db, ICurrentUserContext user, IPlatformAdminService service, CancellationToken ct) => await ExecuteIfAuthorized(db, user, () => service.GetBrandingAsync(tenantId, ct)));
@@ -52,6 +56,13 @@ public static class PlatformAdminEndpoints
     {
         if (!await IsAuthorized(db, user)) return Results.Forbid();
         try { var result = await action(); return created ? Results.Created("", result) : Results.Ok(result); }
+        catch (SchoolBootstrapConflictException ex)
+        {
+            var code = ex.Message.Contains("slug", StringComparison.OrdinalIgnoreCase)
+                ? "slug_already_exists"
+                : "school_conflict";
+            return Results.Conflict(new { error = new { code, message = ex.Message } });
+        }
         catch (InvalidOperationException ex) { return Results.Json(new { error = new { code = "scan_invalid", message = ex.Message } }, statusCode: 400); }
         catch (OperationCanceledException) { return Results.Json(new { error = new { code = "scan_timeout", message = "The website scan did not finish in time." } }, statusCode: 504); }
         catch (Exception) { return Results.Json(new { error = new { code = "scan_failed", message = "The website scan could not be completed. Please retry." } }, statusCode: 502); }
