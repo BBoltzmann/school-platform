@@ -140,6 +140,7 @@ public sealed class FeeStructureStudentAssignmentTests
         Assert.Equal(20000m, account.Discounts);
         Assert.Equal(10000m, account.CreditAdjustments);
         Assert.Equal(120000m, account.OutstandingBalance);
+        Assert.Equal(120000m, (await new FeesService(database, new FixedTenantContext(tenant.Id)).GetOutstandingAsync(sourceTerm.Id)).Single(x => x.StudentId == student.Id).OutstandingBalance);
 
         var carry = new CarryForwardRequest(session.Id, sourceTerm.Id, targetSession.Id, targetTerm.Id, "finance-test-run");
         var carryResult = await finance.CarryForwardAsync(carry);

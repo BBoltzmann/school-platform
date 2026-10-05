@@ -12,6 +12,7 @@ import {
   Settings,
   Users,
   UserRound,
+  WalletCards,
 } from "lucide-react";
 
 export const adminNavigation = [
@@ -63,6 +64,11 @@ export const adminNavigation = [
   {
     label: "FINANCE",
     items: [
+      {
+        title: "Finance",
+        href: "finance",
+        icon: WalletCards,
+      },
       {
         title: "Fees Management",
         href: "fees-management",

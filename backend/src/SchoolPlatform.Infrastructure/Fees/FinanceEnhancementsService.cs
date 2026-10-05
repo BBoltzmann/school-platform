@@ -104,7 +104,7 @@ public sealed class FinanceEnhancementsService(SchoolPlatformDbContext db, ITena
     {
         var existing = await db.CarryForwardRuns.SingleOrDefaultAsync(x => x.TenantId == TenantId && x.IdempotencyKey == request.IdempotencyKey, ct);
         if (existing is not null) return new(existing.Id, await db.CarryForwardEntries.CountAsync(x => x.TenantId == TenantId && x.CarryForwardRunId == existing.Id, ct), await db.CarryForwardEntries.Where(x => x.TenantId == TenantId && x.CarryForwardRunId == existing.Id && x.IsDebit).SumAsync(x => (decimal?)x.Amount, ct) ?? 0, await db.CarryForwardEntries.Where(x => x.TenantId == TenantId && x.CarryForwardRunId == existing.Id && !x.IsDebit).SumAsync(x => (decimal?)x.Amount, ct) ?? 0, true);
-        var students = await db.Students.AsNoTracking().Where(x => x.TenantId == TenantId && x.IsActive).Select(x => x.Id).ToListAsync(ct);
+        var students = await db.Students.AsNoTracking().Where(x => x.TenantId == TenantId && x.IsActive && (request.StudentIds == null || request.StudentIds.Contains(x.Id))).Select(x => x.Id).ToListAsync(ct);
         var balances = await BalanceMapAsync(request.SourceSessionId, request.SourceTermId, students, ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var run = new CarryForwardRun(TenantId, request.SourceSessionId, request.SourceTermId, request.TargetSessionId, request.TargetTermId, request.IdempotencyKey, user.UserId); db.CarryForwardRuns.Add(run); await db.SaveChangesAsync(ct);
@@ -124,7 +124,7 @@ public sealed class FinanceEnhancementsService(SchoolPlatformDbContext db, ITena
     }
 
     private async Task<CarryForwardPreviewResult> SummarizeCarryAsync(CarryForwardRequest request, CancellationToken ct)
-    { var ids = await db.Students.AsNoTracking().Where(x => x.TenantId == TenantId && x.IsActive).Select(x => x.Id).ToListAsync(ct); var map = await BalanceMapAsync(request.SourceSessionId, request.SourceTermId, ids, ct); var debit = map.Values.Where(x => x > 0).ToList(); var credit = map.Values.Where(x => x < 0).ToList(); return new(ids.Count, debit.Count, debit.Sum(), credit.Count, credit.Sum(x => Math.Abs(x)), map.Count(x => x.Value == 0)); }
+    { var ids = await db.Students.AsNoTracking().Where(x => x.TenantId == TenantId && x.IsActive && (request.StudentIds == null || request.StudentIds.Contains(x.Id))).Select(x => x.Id).ToListAsync(ct); var map = await BalanceMapAsync(request.SourceSessionId, request.SourceTermId, ids, ct); var debit = map.Values.Where(x => x > 0).ToList(); var credit = map.Values.Where(x => x < 0).ToList(); return new(ids.Count, debit.Count, debit.Sum(), credit.Count, credit.Sum(x => Math.Abs(x)), map.Count(x => x.Value == 0), map.Where(x => x.Value != 0).Select(x => new CarryForwardStudentPreview(x.Key, x.Value, x.Value > 0)).ToList()); }
 
     private async Task<Dictionary<Guid, decimal>> BalanceMapAsync(Guid sessionId, Guid? termId, IReadOnlyCollection<Guid> students, CancellationToken ct)
     {

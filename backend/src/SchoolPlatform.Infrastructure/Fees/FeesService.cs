@@ -1231,7 +1231,7 @@ public sealed class FeesService : IFeesService
             creditAdjustments,
             unallocatedCredit,
             adjustments.Select(x => new StudentFeeAdjustmentResult(x.Id, x.Type.ToString(), x.Amount, x.Description, x.Reason, x.Status == FinanceRecordStatus.Reversed, x.CreatedAtUtc)).ToList(),
-            discountsApplied.Select(x => new StudentDiscountResult(x.Id, discountNames.GetValueOrDefault(x.DiscountDefinitionId) ?? "Discount", x.AppliedAmount, x.Status == FinanceRecordStatus.Reversed, x.CreatedAtUtc)).ToList(),
+            discountsApplied.Select(x => new StudentDiscountResult(x.Id, x.DiscountApplicationId, discountNames.GetValueOrDefault(x.DiscountDefinitionId) ?? "Discount", x.AppliedAmount, x.Status == FinanceRecordStatus.Reversed, x.CreatedAtUtc)).ToList(),
             ledger.OrderBy(x => x.OccurredAtUtc).ToList());
     }
 
@@ -1511,16 +1511,19 @@ public sealed class FeesService : IFeesService
             .GroupBy(x => x.StudentId)
             .ToDictionary(x => x.Key, x => x.Select(v => v.ClassName).FirstOrDefault());
 
-        return charges
-            .GroupBy(x => new { x.StudentId, x.AdmissionNumber, x.StudentName })
-            .Select(group => new OutstandingStudentResult(
-                group.Key.StudentId,
-                group.Key.AdmissionNumber,
-                group.Key.StudentName,
-                group.Sum(x => x.Amount),
-                group.Sum(x => x.AmountPaid),
-                group.Sum(x => x.Amount - x.AmountPaid),
-                classByStudent.GetValueOrDefault(group.Key.StudentId)))
+        var grouped = charges.GroupBy(x => new { x.StudentId, x.AdmissionNumber, x.StudentName }).ToList();
+        var ids = grouped.Select(x => x.Key.StudentId).ToArray();
+        var discounts = await _database.StudentDiscountAssignments.AsNoTracking().Where(x => x.TenantId == tenantId && ids.Contains(x.StudentId) && (x.AcademicTermId == academicTermId || x.AcademicTermId == null) && x.Status == FinanceRecordStatus.Active).GroupBy(x => x.StudentId).ToDictionaryAsync(x => x.Key, x => x.Sum(v => v.AppliedAmount), cancellationToken);
+        var adjustments = await _database.StudentFeeAdjustments.AsNoTracking().Where(x => x.TenantId == tenantId && ids.Contains(x.StudentId) && (x.AcademicTermId == academicTermId || x.AcademicTermId == null) && x.Status == FinanceRecordStatus.Active).ToListAsync(cancellationToken);
+        var payments = await _database.FeePayments.AsNoTracking().Include(x => x.Allocations).Where(x => x.TenantId == tenantId && ids.Contains(x.StudentId) && x.AcademicTermId == academicTermId && !x.IsReversed).ToListAsync(cancellationToken);
+        return grouped
+            .Select(group => {
+                var debit = adjustments.Where(x => x.StudentId == group.Key.StudentId && x.Type is FinancialAdjustmentType.OpeningDebit or FinancialAdjustmentType.ManualDebit or FinancialAdjustmentType.CarryForwardDebit or FinancialAdjustmentType.CarryForwardTransferOutDebit).Sum(x => x.Amount);
+                var credit = adjustments.Where(x => x.StudentId == group.Key.StudentId && x.Type is FinancialAdjustmentType.OpeningCredit or FinancialAdjustmentType.ManualCredit or FinancialAdjustmentType.CarryForwardCredit or FinancialAdjustmentType.CarryForwardTransferOutCredit).Sum(x => x.Amount);
+                var unallocated = payments.Where(x => x.StudentId == group.Key.StudentId).Sum(x => Math.Max(0m, x.Amount - x.Allocations.Sum(a => a.Amount)));
+                var balance = group.Sum(x => x.Amount - x.AmountPaid) - discounts.GetValueOrDefault(group.Key.StudentId) + debit - credit - unallocated;
+                return new OutstandingStudentResult(group.Key.StudentId, group.Key.AdmissionNumber, group.Key.StudentName, group.Sum(x => x.Amount), group.Sum(x => x.AmountPaid), Math.Max(balance, 0m), classByStudent.GetValueOrDefault(group.Key.StudentId));
+            })
             .Where(x => x.OutstandingBalance > 0)
             .OrderByDescending(x => x.OutstandingBalance)
             .ToList();

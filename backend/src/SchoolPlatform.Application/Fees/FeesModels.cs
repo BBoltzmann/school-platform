@@ -190,6 +190,7 @@ public sealed record StudentFeeAdjustmentResult(
 
 public sealed record StudentDiscountResult(
     Guid Id,
+    Guid DiscountApplicationId,
     string Name,
     decimal Amount,
     bool IsReversed,

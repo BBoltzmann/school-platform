@@ -30,6 +30,7 @@ type Account = {
   creditAdjustments?: number;
   unallocatedPaymentCredit?: number;
   ledger?: { type: string; description: string; debit: number; credit: number; occurredAtUtc: string }[];
+  discountsApplied?: { id: string; discountApplicationId: string; name: string; amount: number; isReversed: boolean }[];
   charges: {
     id: string;
     feeStructureId: string | null;
@@ -121,6 +122,7 @@ export function StudentAccountsWorkspace({
   const [manualDescription, setManualDescription] = useState("");
   const [manualFeeItemId, setManualFeeItemId] = useState(setup.feeItems[0]?.id ?? "");
   const [manualAmount, setManualAmount] = useState("");
+  const [discounts, setDiscounts] = useState<{ id: string; name: string; defaultAmount: number; isActive: boolean }[]>([]);
 
   async function loadAccount() {
     if (
@@ -144,11 +146,12 @@ export function StudentAccountsWorkspace({
 
       if (!response.ok) {
         throw new Error(
-          result.error
+          result.error ?? result.detail ?? result.title ?? "Unable to load student account."
         );
       }
 
       setAccount(result);
+      await loadDiscounts();
       await loadOptionalComponents();
     } catch (exception) {
       setError(
@@ -170,6 +173,39 @@ export function StudentAccountsWorkspace({
     const first = result.find((item: OptionalComponent) => !item.alreadyAdded);
     setOptionalLineId(first?.feeStructureLineId ?? "");
     setOptionalAmount(first ? String(first.templateAmount) : "");
+  }
+
+  async function loadDiscounts() {
+    const response = await fetch("/api/fees/discounts");
+    if (response.ok) setDiscounts(await response.json());
+  }
+
+  async function applyStudentDiscount() {
+    if (!setup.currentSession || discounts.length === 0) { setOptionalMessage("Create an active discount definition first."); return; }
+    const selected = window.prompt(`Enter the discount id to apply:\n${discounts.filter(x => x.isActive).map(x => `${x.id} — ${x.name} (${money(x.defaultAmount)})`).join("\n")}`);
+    const definition = discounts.find(x => x.id === selected);
+    if (!definition) { setOptionalMessage("Choose a valid discount."); return; }
+    const amountText = window.prompt("Discount amount", String(definition.defaultAmount));
+    if (amountText === null) return;
+    const response = await fetch("/api/fees/discounts/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ discountDefinitionId: definition.id, academicSessionId: setup.currentSession.id, academicTermId, audienceType: "SelectedStudents", studentIds: [studentId], amountOverride: Number(amountText), idempotencyKey: `student:${studentId}:${definition.id}:${academicTermId}` }) });
+    const result = await response.json();
+    if (!response.ok) { setOptionalMessage(result.error ?? "Unable to apply discount."); return; }
+    setOptionalMessage("Discount applied to this student.");
+    await loadAccount();
+  }
+
+  async function addPreviousBalance() {
+    if (!setup.currentSession) return;
+    const amountText = window.prompt("Previous balance amount (positive)");
+    if (amountText === null) return;
+    const amount = Number(amountText);
+    if (!Number.isFinite(amount) || amount <= 0) { setOptionalMessage("Enter a positive amount."); return; }
+    const owes = window.confirm("OK = student owes the school (debit). Cancel = student has a credit.");
+    const response = await fetch("/api/fees/adjustments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId, academicSessionId: setup.currentSession.id, academicTermId, type: owes ? "OpeningDebit" : "OpeningCredit", amount, description: owes ? "Opening debit balance" : "Opening credit balance", reason: window.prompt("Note (optional)") }) });
+    const result = await response.json();
+    if (!response.ok) { setOptionalMessage(result.error ?? "Unable to add previous balance."); return; }
+    setOptionalMessage("Previous balance added.");
+    await loadAccount();
   }
 
   async function addOptionalComponent() {
@@ -415,6 +451,8 @@ export function StudentAccountsWorkspace({
               <Breakdown label="Unallocated payment credit" value={money(account.unallocatedPaymentCredit ?? account.creditBalance)} />
             </div>
             {account.ledger && account.ledger.length > 0 && <div className="mt-5 overflow-x-auto"><table className="w-full text-sm"><thead className="border-b text-left"><tr><th className="py-2">Activity</th><th className="py-2">Description</th><th className="py-2 text-right">Debit</th><th className="py-2 text-right">Credit</th></tr></thead><tbody className="divide-y">{account.ledger.map((entry, index) => <tr key={`${entry.type}-${entry.occurredAtUtc}-${index}`}><td className="py-2 capitalize">{entry.type}</td><td className="py-2">{entry.description}</td><td className="py-2 text-right">{entry.debit ? money(entry.debit) : "—"}</td><td className="py-2 text-right">{entry.credit ? money(entry.credit) : "—"}</td></tr>)}</tbody></table></div>}
+            <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" onClick={() => void applyStudentDiscount()}>Add discount</Button><Button size="sm" variant="outline" onClick={() => void addPreviousBalance()}>Add previous balance</Button></div>
+            {account.discountsApplied?.filter(x => !x.isReversed).map(discount => <div className="mt-3 flex items-center justify-between rounded border p-2 text-sm" key={discount.id}><span>{discount.name} — {money(discount.amount)}</span><button className="text-red-700 hover:underline" onClick={async () => { const reason = window.prompt("Reason for reversal"); if (!reason) return; const response = await fetch(`/api/fees/discounts/applications/${discount.discountApplicationId}/reverse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }); if (!response.ok) { setOptionalMessage("Unable to reverse discount."); return; } setOptionalMessage("Discount reversed."); await loadAccount(); }}>Reverse discount</button></div>)}
           </section>
 
           <section className="rounded-xl border bg-card p-5">
