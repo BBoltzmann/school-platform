@@ -123,7 +123,9 @@ public sealed record WebsiteImportDraft(
     IReadOnlyCollection<string>? FailedPages = null,
     IReadOnlyDictionary<string, string>? Sources = null,
     IReadOnlyCollection<WebsiteColorCandidate>? ColorCandidatesDetailed = null,
-    string? Address = null);
+    string? Address = null,
+    string? LogoDataUrl = null,
+    string? IconDataUrl = null);
 
 public sealed record WebsiteColorCandidate(string Value, string? RoleSuggestion, string Source, string SourceUrl);
 

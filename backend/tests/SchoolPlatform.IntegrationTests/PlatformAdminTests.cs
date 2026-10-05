@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.IdentityModel.Tokens.Jwt;
+using System.Text.Json;
 using SchoolPlatform.Application.Platform;
 using SchoolPlatform.Application.Authentication;
 using SchoolPlatform.Infrastructure.Persistence;
@@ -113,6 +114,28 @@ public sealed class PlatformAdminTests
         Assert.Equal("#112233", result.PrimaryColor);
         Assert.Equal("Learn and serve", (await service.GetBrandingAsync(tenant.Id)).Motto);
         Assert.Equal("Antioch Royal College", await database.Tenants.Where(x => x.Id == tenant.Id).Select(x => x.Name).SingleAsync());
+    }
+
+    [PostgresTimetableFact]
+    public async Task TenantContextReturnsPersistedBrandingForAuthenticatedShell()
+    {
+        using var factory = new AuthenticationFactory();
+        var client = await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await database.Tenants.SingleAsync(x => x.Slug == "antioch-college");
+        var service = scope.ServiceProvider.GetRequiredService<IPlatformAdminService>();
+        await service.UpdateBrandingAsync(tenant.Id, new UpdateTenantBrandingRequest(
+            null, null, null, null, "Tenant motto", null, null, null,
+            "data:image/png;base64,AQID", null, "#123456", "#654321", "#ABCDEF"));
+        var login = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(AuthenticationFactory.AdminEmail, AuthenticationFactory.OldPassword, "antioch-college"));
+        var session = await login.Content.ReadFromJsonAsync<LoginResult>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session!.AccessToken);
+        var context = await client.GetFromJsonAsync<JsonElement>("/api/tenant/context");
+        var branding = context.GetProperty("tenantBranding");
+        Assert.Equal("Tenant motto", branding.GetProperty("motto").GetString());
+        Assert.Equal("data:image/png;base64,AQID", branding.GetProperty("logoDataUrl").GetString());
+        Assert.Equal("#123456", branding.GetProperty("primaryColor").GetString());
     }
 
     [PostgresTimetableFact]

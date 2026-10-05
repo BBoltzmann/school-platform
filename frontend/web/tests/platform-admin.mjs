@@ -33,4 +33,9 @@ test("platform admin has a separate login and school control plane", () => {
   assert.doesNotMatch(read("app/account/setup/page.tsx"), /Recovery code/);
   assert.match(read("app/account/setup/page.tsx"), /schoolSlug/);
   assert.match(read("app/api/auth/setup/route.ts"), /api\/auth\/setup/);
+  const tenantBrand = read("components/tenant/tenant-brand.tsx");
+  assert.doesNotMatch(tenantBrand, />ARC</);
+  assert.match(tenantBrand, /logoDataUrl/);
+  assert.match(read("components/layout/admin-shell.tsx"), /branding/);
+  assert.match(read("app/app/[tenantSlug]/layout.tsx"), /branding=\{session\.tenantBranding\}/);
 });

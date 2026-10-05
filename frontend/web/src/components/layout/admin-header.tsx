@@ -12,12 +12,16 @@ import { TenantBrand } from "@/components/tenant/tenant-brand";
 
 type AdminHeaderProps = {
   tenantName: string;
+  logoDataUrl?: string | null;
+  secondaryColor: string;
   email: string;
   role: string;
 };
 
 export function AdminHeader({
   tenantName,
+  logoDataUrl,
+  secondaryColor,
   email,
   role,
 }: AdminHeaderProps) {
@@ -43,10 +47,10 @@ export function AdminHeader({
     email.charAt(0).toUpperCase();
 
   return (
-    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center border-b border-white/10 bg-black px-4 text-white lg:px-6">
+    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center border-b border-white/10 px-4 text-white lg:px-6" style={{ backgroundColor: secondaryColor }}>
       <div className="flex w-full items-center justify-between">
         <div className="flex items-center gap-5">
-          <TenantBrand name={tenantName} />
+          <TenantBrand name={tenantName} logoDataUrl={logoDataUrl} />
 
           <button
             type="button"

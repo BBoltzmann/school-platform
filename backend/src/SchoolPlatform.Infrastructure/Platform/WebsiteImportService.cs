@@ -13,6 +13,7 @@ public sealed class WebsiteImportService(HttpClient client) : IWebsiteImportServ
     private const int MaxBytes = 1_000_000;
     private const int MaxPages = 8;
     private static readonly TimeSpan AggregationReserve = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan AssetReserve = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan DiscoveryBudget = TimeSpan.FromSeconds(20);
     private static readonly Regex TagRegex = new("<[^>]+>", RegexOptions.Compiled | RegexOptions.Singleline);
     private static readonly Regex EmailRegex = new(@"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -39,19 +40,35 @@ public sealed class WebsiteImportService(HttpClient client) : IWebsiteImportServ
         var validatedHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var sitemapScanned = false;
         var navigationCandidates = 0;
+        string? logoDataUrl = null;
+        string? iconDataUrl = null;
+        var logoAttempted = false;
+        var iconAttempted = false;
         var queue = new PriorityQueue<Uri, int>();
         var queued = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         Enqueue(submitted, 0, queue, queued);
         foreach (var path in new[] { "/about", "/about-us", "/who-we-are", "/mission", "/vision", "/contact", "/contact-us" })
             Enqueue(new Uri(submitted, path), 30, queue, queued);
 
-        while (queue.Count > 0 && pages.Count < MaxPages && deadline.Elapsed < DiscoveryBudget && !scanToken.IsCancellationRequested)
+        while (queue.Count > 0 && pages.Count < MaxPages && deadline.Elapsed < DiscoveryBudget - AssetReserve && !scanToken.IsCancellationRequested)
         {
             var uri = queue.Dequeue();
             try
             {
                 var page = await FetchAsync(uri, submitted, deadline, scanToken, false, validatedHosts);
                 if (page is null) { failed.Add(uri.ToString()); continue; }
+                if (!logoAttempted)
+                {
+                    logoAttempted = true;
+                    var candidate = Assets(page.Html, page.Uri, false).FirstOrDefault();
+                    logoDataUrl = await FetchAssetDataUrlAsync(candidate, submitted, deadline, scanToken, validatedHosts);
+                }
+                if (!iconAttempted)
+                {
+                    iconAttempted = true;
+                    var candidate = Assets(page.Html, page.Uri, true).FirstOrDefault();
+                    iconDataUrl = await FetchAssetDataUrlAsync(candidate, submitted, deadline, scanToken, validatedHosts);
+                }
                 var styles = await FetchStylesAsync(page.Html, page.Uri, submitted, deadline, scanToken, stylesheetCache, validatedHosts);
                 pages.Add(page with { Styles = styles });
                 var links = DiscoverLinks(page.Html, page.Uri, submitted).ToArray();
@@ -71,7 +88,14 @@ public sealed class WebsiteImportService(HttpClient client) : IWebsiteImportServ
         }
         if (deadline.Elapsed >= DiscoveryBudget || budget.IsCancellationRequested) warnings.Add("The scan budget was nearly exhausted; optional discovery was skipped.");
         if (pages.Count == 0) throw new InvalidOperationException("No readable public HTML pages were found.");
-        return Combine(submitted, pages, warnings, failed);
+        var draft = Combine(submitted, pages, warnings, failed);
+        if (logoDataUrl is null && !logoAttempted && draft.LogoCandidates.Count > 0)
+            logoDataUrl = await FetchAssetDataUrlAsync(draft.LogoCandidates.First(), submitted, deadline, scanToken, validatedHosts);
+        if (iconDataUrl is null && !iconAttempted && draft.IconCandidates.Count > 0)
+            iconDataUrl = await FetchAssetDataUrlAsync(draft.IconCandidates.First(), submitted, deadline, scanToken, validatedHosts);
+        if (draft.LogoCandidates.Count > 0 && logoDataUrl is null) warnings.Add("The discovered logo could not be safely imported; you can upload a replacement.");
+        if (draft.IconCandidates.Count > 0 && iconDataUrl is null) warnings.Add("The discovered icon could not be safely imported; you can upload a replacement.");
+        return draft with { LogoDataUrl = logoDataUrl, IconDataUrl = iconDataUrl, Warnings = warnings.Distinct().ToArray() };
     }
 
     private static bool HasIdentityData(IEnumerable<Page> pages)
@@ -135,8 +159,8 @@ public sealed class WebsiteImportService(HttpClient client) : IWebsiteImportServ
         var about = Section(pages, "about|who we are|our story|school history|welcome");
         var address = Address(pages);
         var descriptions = pages.SelectMany(x => MetaValues(x.Html, "description")).Concat(about is null ? [] : [about]).ToArray();
-        var logos = pages.SelectMany(x => Assets(x.Html, x.Uri, false)).Distinct().Take(12).ToArray();
-        var icons = pages.SelectMany(x => Assets(x.Html, x.Uri, true)).Distinct().Take(12).ToArray();
+        var logos = pages.SelectMany(x => Assets(x.Html, x.Uri, false)).Where(x => Uri.TryCreate(x, UriKind.Absolute, out var asset) && SameOrigin(asset, root)).Distinct().Take(12).ToArray();
+        var icons = pages.SelectMany(x => Assets(x.Html, x.Uri, true)).Where(x => Uri.TryCreate(x, UriKind.Absolute, out var asset) && SameOrigin(asset, root)).Distinct().Take(12).ToArray();
         var text = pages.Select(x => Strip(x.Html)).ToArray();
         var emails = pages.SelectMany(x => EmailRegex.Matches(x.Html).Select(m => m.Value)).Concat(pages.SelectMany(x => Hrefs(x.Html).Where(x => x.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)).Select(x => x[7..]))).Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToArray();
         var phones = text.SelectMany(x => PhoneRegex.Matches(x).Select(m => m.Value.Trim())).Distinct().Take(10).ToArray();
@@ -158,6 +182,56 @@ public sealed class WebsiteImportService(HttpClient client) : IWebsiteImportServ
         var sources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (mission is not null) sources["mission"] = Source(pages, "mission")!; if (vision is not null) sources["vision"] = Source(pages, "vision")!; if (about is not null) sources["shortAbout"] = Source(pages, "about|who we are|our story|school history|welcome")!; if (address is not null) sources["address"] = Source(pages, "contact|address") ?? pages.FirstOrDefault(x => Regex.IsMatch(x.Html, "<(?:address|footer)\\b", RegexOptions.IgnoreCase))?.Uri.ToString()!;
         return new(root.ToString(), title, names, descriptions.FirstOrDefault(), logos, icons, emails, phones, socials, colors, Motto(pages), mission, vision, core, pages.Select(x => x.Uri.ToString()).ToArray(), warnings.Distinct().ToArray(), failed.Distinct().ToArray(), sources, colorEvidence.Select((x, index) => new WebsiteColorCandidate(x.Value, x.Role ?? (index == 0 ? "primary" : index == 1 ? "secondary" : index == 2 ? "accent" : null), x.Source, x.Url)).ToArray(), address);
+    }
+
+    private async Task<string?> FetchAssetDataUrlAsync(string? candidate, Uri root, Stopwatch deadline, CancellationToken ct, HashSet<string> validatedHosts)
+    {
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var original) || !SameOrigin(original, root)) return null;
+        var current = original;
+        for (var redirect = 0; redirect <= 3; redirect++)
+        {
+            EnsureSameOrigin(current, root);
+            await EnsurePublicHostAsync(current, ct, validatedHosts);
+            var remaining = DiscoveryBudget - deadline.Elapsed;
+            if (remaining <= AggregationReserve) return null;
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            linked.CancelAfter(remaining > TimeSpan.FromSeconds(5) ? TimeSpan.FromSeconds(5) : remaining);
+            using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            request.Headers.Accept.ParseAdd("image/png,image/jpeg,image/webp;q=0.9");
+            try
+            {
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linked.Token);
+                if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is not null)
+                {
+                    current = new Uri(current, response.Headers.Location);
+                    continue;
+                }
+                if (!response.IsSuccessStatusCode) return null;
+                var mediaType = response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant();
+                if (mediaType is not ("image/png" or "image/jpeg" or "image/webp")) return null;
+                var bytes = await ReadBoundedBytesAsync(response, linked.Token, 1_500_000);
+                return $"data:{mediaType};base64,{Convert.ToBase64String(bytes)}";
+            }
+            catch (OperationCanceledException) { return null; }
+            catch (HttpRequestException) { return null; }
+        }
+        return null;
+    }
+
+    private static async Task<byte[]> ReadBoundedBytesAsync(HttpResponseMessage response, CancellationToken ct, int maxBytes)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var output = new MemoryStream();
+        var buffer = new byte[16 * 1024];
+        var total = 0;
+        int read;
+        while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+        {
+            total += read;
+            if (total > maxBytes) throw new InvalidOperationException("image was too large");
+            await output.WriteAsync(buffer.AsMemory(0, read), ct);
+        }
+        return output.ToArray();
     }
 
     private static string? Section(IEnumerable<Page> pages, string headings) => pages.Select(x => SectionValues(x.Html, headings).FirstOrDefault()).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));

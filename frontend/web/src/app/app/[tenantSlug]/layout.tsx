@@ -35,6 +35,7 @@ export default async function TenantLayout({
       tenantName={session.tenantName}
       email={session.email}
       roles={session.roles}
+      branding={session.tenantBranding}
     >
       {children}
     </AdminShell>

@@ -77,6 +77,26 @@ public sealed class WebsiteImportTests
     }
 
     [Fact]
+    public async Task SafeSameOriginLogoIsConvertedToDurableDataUrl()
+    {
+        using var client = new HttpClient(new ResponseMapHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/logo.png")
+            {
+                var image = new ByteArrayContent([1, 2, 3]);
+                image.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = image };
+            }
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html><body><img src='/logo.png' alt='School Logo'></body></html>", System.Text.Encoding.UTF8, "text/html") };
+            response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/html");
+            return response;
+        }));
+        client.DefaultRequestHeaders.Accept.Clear();
+        var draft = await new WebsiteImportService(client).ScanAsync("https://example.com/");
+        Assert.Equal("data:image/png;base64,AQID", draft.LogoDataUrl);
+    }
+
+    [Fact]
     public async Task BrandEvidenceOutranksGenericFrameworkVariablesAndFindsAddress()
     {
         using var client = new HttpClient(new Handler("<html><head><style>:root { --bs-primary: #0D6EFD; --school-brand: rgb(18, 52, 86); } header { background-color: #123456; } body { color: #54595F; }</style></head><body><header>School</header><address>12 Independence Avenue, Luanda</address></body></html>"));
@@ -107,5 +127,11 @@ public sealed class WebsiteImportTests
             var body = resolver(request);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "text/html") });
         }
+    }
+
+    private sealed class ResponseMapHandler(Func<HttpRequestMessage, HttpResponseMessage> resolver) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(resolver(request));
     }
 }

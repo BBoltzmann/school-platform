@@ -22,6 +22,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const schoolName = branding?.name ?? (tenantSlug === "antioch-college" ? "Antioch Royal College" : tenantSlug);
   const primary = branding?.primaryColor ?? "#F5D900";
   const secondary = branding?.secondaryColor ?? "#0B0B0B";
+  const initials = schoolName.trim().split(/\s+/).filter(Boolean).slice(0, 3).map(word => word[0]).join("").toUpperCase() || "SCH";
   return (
     <main className="grid min-h-screen bg-background lg:grid-cols-[1.05fr_0.95fr]" style={{ "--tenant-primary": primary, "--tenant-secondary": secondary } as CSSProperties}>
       <section className="relative hidden overflow-hidden bg-black p-12 text-white lg:flex lg:flex-col lg:justify-between">
@@ -94,7 +95,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <div className="mb-9 lg:hidden">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-md bg-tenant-primary font-black text-black">
-                ARC
+                {initials}
               </div>
 
               <div>

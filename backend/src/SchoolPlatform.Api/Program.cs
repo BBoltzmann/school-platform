@@ -336,6 +336,18 @@ app.MapGet(
                 .Where(x => x.Id == tenant.TenantId && x.IsActive)
                 .Select(x => x.Name)
                 .SingleOrDefault() ?? tenant.TenantSlug;
+            var tenantProfile = database.TenantProfiles
+                .Where(x => x.TenantId == tenant.TenantId)
+                .Select(x => new
+                {
+                    x.Motto,
+                    x.LogoDataUrl,
+                    x.IconDataUrl,
+                    x.PrimaryColor,
+                    x.SecondaryColor,
+                    x.AccentColor
+                })
+                .SingleOrDefault();
             return Results.Ok(new
             {
                 currentUser.IsAuthenticated,
@@ -345,6 +357,15 @@ app.MapGet(
                 tenant.TenantId,
                 tenant.TenantSlug,
                 tenantName,
+                tenantBranding = new
+                {
+                    motto = tenantProfile?.Motto,
+                    logoDataUrl = tenantProfile?.LogoDataUrl,
+                    iconDataUrl = tenantProfile?.IconDataUrl,
+                    primaryColor = tenantProfile?.PrimaryColor ?? "#F5D900",
+                    secondaryColor = tenantProfile?.SecondaryColor ?? "#0B0B0B",
+                    accentColor = tenantProfile?.AccentColor ?? "#FFF8C9"
+                },
 
                 currentUser.MembershipId,
                 currentUser.Roles,

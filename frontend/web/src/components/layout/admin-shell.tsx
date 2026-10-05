@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { CSSProperties } from "react";
 
 import { AdminHeader } from "./admin-header";
 import { AdminSidebar } from "@/components/navigation/admin-sidebar";
@@ -9,6 +10,14 @@ type AdminShellProps = {
   tenantName: string;
   email: string;
   roles: string[];
+  branding: {
+    motto?: string | null;
+    logoDataUrl?: string | null;
+    iconDataUrl?: string | null;
+    primaryColor: string;
+    secondaryColor: string;
+    accentColor: string;
+  };
 };
 
 export function AdminShell({
@@ -17,13 +26,16 @@ export function AdminShell({
   tenantName,
   email,
   roles,
+  branding,
 }: AdminShellProps) {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background" style={{ "--tenant-primary": branding.primaryColor, "--tenant-secondary": branding.secondaryColor, "--accent": branding.accentColor, "--primary": branding.primaryColor, "--sidebar": branding.secondaryColor, "--sidebar-primary": branding.primaryColor, "--sidebar-ring": branding.primaryColor } as CSSProperties}>
       <AdminHeader
         tenantName={tenantName}
         email={email}
         role={roles[0] ?? "User"}
+        logoDataUrl={branding.logoDataUrl}
+        secondaryColor={branding.secondaryColor}
       />
 
       <AdminSidebar tenantSlug={tenantSlug} roles={roles} />
