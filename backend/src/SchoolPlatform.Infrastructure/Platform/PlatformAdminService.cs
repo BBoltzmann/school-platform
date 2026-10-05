@@ -51,9 +51,23 @@ public sealed class PlatformAdminService(
 
     public async Task<PlatformSchoolProvisionedResult> CreateSchoolAsync(CreatePlatformSchoolRequest request, CancellationToken cancellationToken = default)
     {
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         var result = await bootstrap.BootstrapAsync(new BootstrapSchoolRequest(
             request.Name, request.Slug, request.CampusName,
             request.AdministratorEmail, request.AdministratorFirstName, request.AdministratorLastName), cancellationToken);
+        var profile = new SchoolPlatform.Domain.Tenancy.TenantProfile(result.TenantId);
+        var branding = new UpdateTenantBrandingRequest(
+            request.WebsiteUrl, request.ContactEmail, request.ContactPhone, request.Address,
+            request.Motto, request.Mission, request.Vision, request.ShortAbout,
+            request.LogoDataUrl, request.IconDataUrl, request.PrimaryColor,
+            request.SecondaryColor, request.AccentColor);
+        ValidateProfile(branding);
+        profile.Update(branding.WebsiteUrl, branding.ContactEmail, branding.ContactPhone, branding.Address,
+            branding.Motto, branding.Mission, branding.Vision, branding.ShortAbout,
+            branding.LogoDataUrl, branding.IconDataUrl, branding.PrimaryColor,
+            branding.SecondaryColor, branding.AccentColor);
+        database.TenantProfiles.Add(profile);
+        await database.SaveChangesAsync(cancellationToken);
         var pending = await database.Users.AsNoTracking()
             .Where(x => x.Id == result.UserId)
             .Select(x => x.PasswordHash == null)
@@ -61,6 +75,7 @@ public sealed class PlatformAdminService(
         var setupLink = pending
             ? await CreateAdministratorActivationAsync(result.UserId, result.TenantId, request.AdministratorEmail, cancellationToken)
             : null;
+        await transaction.CommitAsync(cancellationToken);
         return new(await GetSchoolAsync(result.TenantId, cancellationToken), pending, setupLink);
     }
 

@@ -22,7 +22,20 @@ public sealed record CreatePlatformSchoolRequest(
     string CampusName,
     string AdministratorFirstName,
     string AdministratorLastName,
-    string AdministratorEmail);
+    string AdministratorEmail,
+    string? WebsiteUrl = null,
+    string? ContactEmail = null,
+    string? ContactPhone = null,
+    string? Address = null,
+    string? Motto = null,
+    string? Mission = null,
+    string? Vision = null,
+    string? ShortAbout = null,
+    string? LogoDataUrl = null,
+    string? IconDataUrl = null,
+    string? PrimaryColor = null,
+    string? SecondaryColor = null,
+    string? AccentColor = null);
 
 public sealed record PlatformSchoolSummary(
     Guid TenantId,

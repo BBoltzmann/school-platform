@@ -19,6 +19,9 @@ test("platform admin has a separate login and school control plane", () => {
   assert.match(read("app/super-admin/schools/new/page.tsx"), /School created successfully/);
   assert.match(read("app/super-admin/schools/new/page.tsx"), /Administrator setup link/);
   assert.match(read("app/super-admin/schools/new/page.tsx"), /if \(saving\) return/);
+  assert.match(read("app/super-admin/schools/new/page.tsx"), /contactEmail: form\.contactEmail/);
+  assert.match(read("app/super-admin/schools/new/page.tsx"), /mission: form\.mission/);
+  assert.doesNotMatch(read("app/super-admin/schools/new/page.tsx"), /const branding = await fetch/);
   assert.match(read("app/super-admin/schools/[tenantId]/page.tsx"), /Suspend School/);
   assert.match(read("app/super-admin/schools/[tenantId]/page.tsx"), /Danger Zone/);
   assert.match(read("app/super-admin/schools/[tenantId]/page.tsx"), /Delete school permanently/);

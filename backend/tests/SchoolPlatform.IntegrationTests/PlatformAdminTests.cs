@@ -8,6 +8,7 @@ using SchoolPlatform.Application.Platform;
 using SchoolPlatform.Application.Authentication;
 using SchoolPlatform.Infrastructure.Persistence;
 using SchoolPlatform.Infrastructure.Platform;
+using SchoolPlatform.Domain.Students;
 
 namespace SchoolPlatform.IntegrationTests;
 
@@ -133,6 +134,8 @@ public sealed class PlatformAdminTests
         Assert.False(await database.Tenants.AnyAsync(x => x.Id == created.School.Summary.TenantId));
 
         var populatedTenant = await database.Tenants.SingleAsync(x => x.Slug == "antioch-college");
+        database.Students.Add(new Student(populatedTenant.Id, "TEST/DELETE/001", "Test", null, "Student", new DateOnly(2010, 1, 1), "Female", new DateOnly(2026, 9, 1), null, null));
+        await database.SaveChangesAsync();
         var populatedEligibility = await service.GetDeletionEligibilityAsync(populatedTenant.Id);
         Assert.False(populatedEligibility.CanDeletePermanently);
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteEmptySchoolAsync(populatedTenant.Id));
@@ -158,5 +161,61 @@ public sealed class PlatformAdminTests
         var invited = await database.Users.SingleAsync(x => x.Email == "new-admin@example.com");
         Assert.True(await database.TenantMemberships.AnyAsync(x => x.TenantId == created.School.Summary.TenantId && x.UserId == invited.Id));
         Assert.Single(await database.PasswordResetTokens.Where(x => x.TenantId == created.School.Summary.TenantId && x.UserId == invited.Id).ToListAsync());
+    }
+
+    [PostgresTimetableFact]
+    public async Task SchoolCreationPersistsReviewedProfileAndKeepsContactSeparateFromAdministrator()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IPlatformAdminService>();
+        var platformUser = await database.Users.SingleAsync(x => x.Email == AuthenticationFactory.AdminEmail);
+        await service.PromoteSuperAdminAsync(platformUser.Email);
+
+        var created = await service.CreateSchoolAsync(new CreatePlatformSchoolRequest(
+            "Profile Demo", "profile-demo", "Main campus", "New", "Admin", "admin@school.test",
+            "https://example.edu", "info@school.test", "+2348000000000", "1 School Road",
+            "Learn boldly", "Reviewed mission", "Reviewed vision", "A reviewed school profile",
+            "data:image/png;base64,AA==", "data:image/png;base64,AA==", "#123456", "#654321", "#ABCDEF"));
+
+        var profile = await database.TenantProfiles.SingleAsync(x => x.TenantId == created.School.Summary.TenantId);
+        Assert.Equal("https://example.edu", profile.WebsiteUrl);
+        Assert.Equal("info@school.test", profile.ContactEmail);
+        Assert.Equal("+2348000000000", profile.ContactPhone);
+        Assert.Equal("1 School Road", profile.Address);
+        Assert.Equal("Learn boldly", profile.Motto);
+        Assert.Equal("Reviewed mission", profile.Mission);
+        Assert.Equal("Reviewed vision", profile.Vision);
+        Assert.Equal("A reviewed school profile", profile.ShortAbout);
+        Assert.Equal("data:image/png;base64,AA==", profile.LogoDataUrl);
+        Assert.Equal("data:image/png;base64,AA==", profile.IconDataUrl);
+        Assert.Equal("#123456", profile.PrimaryColor);
+        Assert.Equal("#654321", profile.SecondaryColor);
+        Assert.Equal("#ABCDEF", profile.AccentColor);
+        var readback = await service.GetBrandingAsync(created.School.Summary.TenantId);
+        Assert.Equal(profile.Mission, readback.Mission);
+        Assert.Equal("info@school.test", readback.ContactEmail);
+        var membershipUserId = await database.TenantMemberships.Where(m => m.TenantId == created.School.Summary.TenantId).Select(m => m.UserId).SingleAsync();
+        Assert.Equal("admin@school.test", await database.Users.Where(x => x.Id == membershipUserId).Select(x => x.Email).SingleAsync());
+    }
+
+    [PostgresTimetableFact]
+    public async Task SchoolCreationWithoutProfileUsesSafeDefaults()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IPlatformAdminService>();
+        var platformUser = await database.Users.SingleAsync(x => x.Email == AuthenticationFactory.AdminEmail);
+        await service.PromoteSuperAdminAsync(platformUser.Email);
+        var created = await service.CreateSchoolAsync(new CreatePlatformSchoolRequest("Defaults Demo", "defaults-demo", "Campus", "Admin", "User", "defaults@example.com"));
+        var profile = await database.TenantProfiles.SingleAsync(x => x.TenantId == created.School.Summary.TenantId);
+        Assert.Null(profile.WebsiteUrl);
+        Assert.Equal("#F5D900", profile.PrimaryColor);
+        Assert.Equal("#0B0B0B", profile.SecondaryColor);
+        Assert.Equal("#FFF8C9", profile.AccentColor);
     }
 }
