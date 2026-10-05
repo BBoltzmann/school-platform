@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export function LoginForm({ initialTenantSlug = "antioch-college" }: { initialTenantSlug?: string }) {
+export function LoginForm({ initialTenantSlug = "antioch-college", tenantLocked = false }: { initialTenantSlug?: string; tenantLocked?: boolean }) {
   const [tenantSlug, setTenantSlug] = useState(initialTenantSlug);
   const router = useRouter();
 
@@ -64,9 +64,7 @@ export function LoginForm({ initialTenantSlug = "antioch-college" }: { initialTe
         return;
       }
 
-      router.push(
-        "/"
-      );
+      router.push(tenantLocked ? `/app/${encodeURIComponent(tenantSlug)}/dashboard` : "/");
 
       router.refresh();
     } catch {
@@ -83,10 +81,10 @@ export function LoginForm({ initialTenantSlug = "antioch-college" }: { initialTe
       onSubmit={handleSubmit}
       className="space-y-5"
     >
-      <label className="block space-y-2 text-sm font-medium">
+      {!tenantLocked && <label className="block space-y-2 text-sm font-medium">
         <span>School slug</span>
         <Input name="tenantSlug" value={tenantSlug} onChange={event => setTenantSlug(event.target.value)} minLength={3} maxLength={100} required />
-      </label>
+      </label>}
       <div className="space-y-2">
         <label
           htmlFor="email"

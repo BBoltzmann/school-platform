@@ -28,7 +28,7 @@ test("active timetable has master, class, teacher, and teacher portal exports", 
   assert.match(pdf, /application\/pdf/);
   assert.doesNotMatch(pdf, /Antioch Royal College/);
   assert.match(read("types/session.ts"), /tenantName/);
-  assert.match(read("app/app/[tenantSlug]/layout.tsx"), /session\.tenantName/);
+  assert.match(read("app/app/[tenantSlug]/(portal)/layout.tsx"), /session\.tenantName/);
 });
 
 test("parallel member rows use stable subject and teacher identifiers for React keys", () => {

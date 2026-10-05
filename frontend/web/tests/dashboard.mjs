@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const page = fs.readFileSync('src/app/app/[tenantSlug]/dashboard/page.tsx', 'utf8');
+const page = fs.readFileSync('src/app/app/[tenantSlug]/(portal)/dashboard/page.tsx', 'utf8');
 const header = fs.readFileSync('src/components/layout/admin-header.tsx', 'utf8');
 const api = fs.readFileSync('src/lib/api/dashboard.ts', 'utf8');
 
