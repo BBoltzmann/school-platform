@@ -12,6 +12,18 @@ public static class FeesEndpoints
             app.MapGroup("/api/fees")
                 .RequireAuthorization();
 
+        group.MapGet("/discounts", async (IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.read") ? Results.Forbid() : await ExecuteAsync(() => service.GetDiscountsAsync(ct)));
+        group.MapPost("/discounts", async (CreateDiscountDefinitionRequest request, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.configure") ? Results.Forbid() : await ExecuteAsync(() => service.CreateDiscountAsync(request, ct)));
+        group.MapPut("/discounts/{discountId:guid}", async (Guid discountId, UpdateDiscountDefinitionRequest request, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.configure") ? Results.Forbid() : await ExecuteAsync(() => service.UpdateDiscountAsync(discountId, request, ct)));
+        group.MapPost("/discounts/{discountId:guid}/deactivate", async (Guid discountId, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.configure") ? Results.Forbid() : await ExecuteAsync(async () => { await service.DeactivateDiscountAsync(discountId, ct); return new { success = true }; }));
+        group.MapPost("/discounts/preview", async (ApplyDiscountRequest request, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.configure") ? Results.Forbid() : await ExecuteAsync(() => service.PreviewDiscountAsync(request, ct)));
+        group.MapPost("/discounts/apply", async (ApplyDiscountRequest request, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.configure") ? Results.Forbid() : await ExecuteAsync(() => service.ApplyDiscountAsync(request, ct)));
+        group.MapPost("/discounts/applications/{applicationId:guid}/reverse", async (Guid applicationId, ReverseFeePaymentRequest request, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.configure") ? Results.Forbid() : await ReverseDiscount(service, applicationId, request.Reason, ct));
+        group.MapPost("/adjustments", async (CreateAdjustmentRequest request, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.configure") ? Results.Forbid() : await ExecuteAsync(() => service.CreateAdjustmentAsync(request, ct)));
+        group.MapPost("/adjustments/{adjustmentId:guid}/reverse", async (Guid adjustmentId, ReverseFeePaymentRequest request, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.configure") ? Results.Forbid() : await ReverseAdjustment(service, adjustmentId, request.Reason, ct));
+        group.MapPost("/carry-forward/preview", async (CarryForwardRequest request, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.read") ? Results.Forbid() : await ExecuteAsync(() => service.PreviewCarryForwardAsync(request, ct)));
+        group.MapPost("/carry-forward", async (CarryForwardRequest request, IFinanceEnhancementsService service, ICurrentUserContext user, CancellationToken ct) => !user.HasPermission("finance.configure") ? Results.Forbid() : await ExecuteAsync(() => service.CarryForwardAsync(request, ct)));
+
         group.MapGet(
             "/overview",
             async (
@@ -21,7 +33,7 @@ public static class FeesEndpoints
                 CancellationToken cancellationToken) =>
             {
                 if (!currentUser.HasPermission(
-                        "students.read"))
+                        "finance.read"))
                 {
                     return Results.Forbid();
                 }
@@ -40,7 +52,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.read"))
+                if (!currentUser.HasPermission("finance.read"))
                 {
                     return Results.Forbid();
                 }
@@ -58,7 +70,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.configure"))
                 {
                     return Results.Forbid();
                 }
@@ -77,7 +89,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.configure"))
                 {
                     return Results.Forbid();
                 }
@@ -96,7 +108,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.configure"))
                 {
                     return Results.Forbid();
                 }
@@ -115,7 +127,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.configure"))
                 {
                     return Results.Forbid();
                 }
@@ -135,7 +147,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.configure"))
                 {
                     return Results.Forbid();
                 }
@@ -155,7 +167,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.read"))
+                if (!currentUser.HasPermission("finance.read"))
                 {
                     return Results.Forbid();
                 }
@@ -175,7 +187,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.configure"))
                 {
                     return Results.Forbid();
                 }
@@ -196,7 +208,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.configure"))
                 {
                     return Results.Forbid();
                 }
@@ -224,7 +236,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.configure"))
                 {
                     return Results.Forbid();
                 }
@@ -245,7 +257,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.read")) return Results.Forbid();
+                if (!currentUser.HasPermission("finance.read")) return Results.Forbid();
                 return await ExecuteAsync(() => service.GetOptionalFeeComponentsAsync(studentId, academicTermId, cancellationToken));
             });
 
@@ -258,7 +270,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update")) return Results.Forbid();
+                if (!currentUser.HasPermission("finance.configure")) return Results.Forbid();
                 return await ExecuteAsync(() => service.AddOptionalFeeComponentAsync(studentId, request, cancellationToken));
             });
 
@@ -272,7 +284,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update")) return Results.Forbid();
+                if (!currentUser.HasPermission("finance.configure")) return Results.Forbid();
                 return await ExecuteAsync(() => service.UpdateOptionalFeeChargeAsync(studentId, chargeId, request, cancellationToken));
             });
 
@@ -285,7 +297,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update")) return Results.Forbid();
+                if (!currentUser.HasPermission("finance.configure")) return Results.Forbid();
                 return await ExecuteAsync(async () =>
                 {
                     await service.RemoveStudentChargeAsync(studentId, chargeId, cancellationToken);
@@ -302,7 +314,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.read"))
+                if (!currentUser.HasPermission("finance.read"))
                 {
                     return Results.Forbid();
                 }
@@ -323,7 +335,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.record_payment"))
                 {
                     return Results.Forbid();
                 }
@@ -344,7 +356,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.record_payment"))
                 {
                     return Results.Forbid();
                 }
@@ -385,7 +397,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.update"))
+                if (!currentUser.HasPermission("finance.record_payment"))
                     return Results.Forbid();
 
                 try
@@ -412,7 +424,7 @@ public static class FeesEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission("students.read"))
+                if (!currentUser.HasPermission("finance.read"))
                 {
                     return Results.Forbid();
                 }
@@ -423,6 +435,9 @@ public static class FeesEndpoints
                         cancellationToken));
             });
     }
+
+    private static async Task<IResult> ReverseAdjustment(IFinanceEnhancementsService service, Guid id, string reason, CancellationToken ct) { await service.ReverseAdjustmentAsync(id, reason, ct); return Results.Ok(new { success = true }); }
+    private static async Task<IResult> ReverseDiscount(IFinanceEnhancementsService service, Guid id, string reason, CancellationToken ct) { try { await service.ReverseDiscountApplicationAsync(id, reason, ct); return Results.Ok(new { success = true }); } catch (Exception exception) when (exception is InvalidOperationException or ArgumentException) { return Results.BadRequest(new { error = exception.Message }); } }
 
     private static async Task<IResult> ExecuteAsync<T>(
         Func<Task<T>> action)

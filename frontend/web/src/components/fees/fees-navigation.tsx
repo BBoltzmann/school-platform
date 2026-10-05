@@ -24,6 +24,14 @@ const items = [
     label: "Outstanding Fees",
     href: "/outstanding-fees",
   },
+  {
+    label: "Discounts",
+    href: "/discounts",
+  },
+  {
+    label: "Carry Forward",
+    href: "/carry-forward",
+  },
 ];
 
 export function FeesNavigation({

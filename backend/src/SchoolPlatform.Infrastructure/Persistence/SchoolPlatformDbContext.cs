@@ -195,6 +195,12 @@ public sealed class SchoolPlatformDbContext : DbContext
     public DbSet<SchoolPlatform.Domain.Fees.FeePaymentAllocation>
         FeePaymentAllocations
         => Set<SchoolPlatform.Domain.Fees.FeePaymentAllocation>();
+    public DbSet<SchoolPlatform.Domain.Fees.DiscountDefinition> DiscountDefinitions => Set<SchoolPlatform.Domain.Fees.DiscountDefinition>();
+    public DbSet<SchoolPlatform.Domain.Fees.DiscountApplication> DiscountApplications => Set<SchoolPlatform.Domain.Fees.DiscountApplication>();
+    public DbSet<SchoolPlatform.Domain.Fees.StudentDiscountAssignment> StudentDiscountAssignments => Set<SchoolPlatform.Domain.Fees.StudentDiscountAssignment>();
+    public DbSet<SchoolPlatform.Domain.Fees.StudentFeeAdjustment> StudentFeeAdjustments => Set<SchoolPlatform.Domain.Fees.StudentFeeAdjustment>();
+    public DbSet<SchoolPlatform.Domain.Fees.CarryForwardRun> CarryForwardRuns => Set<SchoolPlatform.Domain.Fees.CarryForwardRun>();
+    public DbSet<SchoolPlatform.Domain.Fees.CarryForwardEntry> CarryForwardEntries => Set<SchoolPlatform.Domain.Fees.CarryForwardEntry>();
 
     protected override void OnModelCreating(
         ModelBuilder modelBuilder)

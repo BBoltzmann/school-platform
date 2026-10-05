@@ -15,11 +15,13 @@ using SchoolPlatform.Application.Academics;
 using SchoolPlatform.Application.Authentication;
 using SchoolPlatform.Application.Common.Security;
 using SchoolPlatform.Application.Platform;
+using SchoolPlatform.Application.Fees;
 using SchoolPlatform.Domain.Identity;
 using SchoolPlatform.Infrastructure.Academics;
 using SchoolPlatform.Infrastructure.Authentication;
 using SchoolPlatform.Infrastructure.Persistence;
 using SchoolPlatform.Infrastructure.Platform;
+using SchoolPlatform.Infrastructure.Fees;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,6 +58,7 @@ builder.Services.AddScoped<
     AuthenticationService>();
 builder.Services.AddScoped<IPlatformAuthenticationService, PlatformAuthenticationService>();
 builder.Services.AddScoped<IPlatformAdminService, PlatformAdminService>();
+builder.Services.AddScoped<IFinanceEnhancementsService, FinanceEnhancementsService>();
 builder.Services.AddHttpClient<IWebsiteImportService, WebsiteImportService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(10);

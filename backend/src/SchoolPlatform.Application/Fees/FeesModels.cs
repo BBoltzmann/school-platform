@@ -170,7 +170,37 @@ public sealed record StudentFeeAccountResult(
     decimal OutstandingBalance,
     decimal CreditBalance,
     IReadOnlyCollection<StudentFeeChargeResult> Charges,
-    IReadOnlyCollection<FeePaymentResult> Payments);
+    IReadOnlyCollection<FeePaymentResult> Payments,
+    decimal Discounts = 0m,
+    decimal DebitAdjustments = 0m,
+    decimal CreditAdjustments = 0m,
+    decimal UnallocatedPaymentCredit = 0m,
+    IReadOnlyCollection<StudentFeeAdjustmentResult>? Adjustments = null,
+    IReadOnlyCollection<StudentDiscountResult>? DiscountsApplied = null,
+    IReadOnlyCollection<StudentFeeLedgerEntryResult>? Ledger = null);
+
+public sealed record StudentFeeAdjustmentResult(
+    Guid Id,
+    string Type,
+    decimal Amount,
+    string Description,
+    string? Reason,
+    bool IsReversed,
+    DateTime CreatedAtUtc);
+
+public sealed record StudentDiscountResult(
+    Guid Id,
+    string Name,
+    decimal Amount,
+    bool IsReversed,
+    DateTime CreatedAtUtc);
+
+public sealed record StudentFeeLedgerEntryResult(
+    string Type,
+    string Description,
+    decimal Debit,
+    decimal Credit,
+    DateTime OccurredAtUtc);
 
 public sealed record OutstandingStudentResult(
     Guid StudentId,

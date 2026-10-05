@@ -36,7 +36,8 @@ internal sealed class PostgresTimetableFixture : IAsyncDisposable, ITenantContex
         "20260924124545_AddFeeStructureStudentAssignments",
         "20260924173234_AddClassSubjectActiveState",
         "20261004184725_AddPlatformRoleAssignments",
-        "20261004202940_AddTenantProfiles"
+        "20261004202940_AddTenantProfiles",
+        "20261005114119_AddSharedFinanceEnhancements"
     ];
     private readonly string databaseName = "school_timetable_test_" + Guid.NewGuid().ToString("N");
     private readonly string adminConnection;

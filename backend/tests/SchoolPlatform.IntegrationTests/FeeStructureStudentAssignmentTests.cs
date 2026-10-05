@@ -14,6 +14,143 @@ namespace SchoolPlatform.IntegrationTests;
 public sealed class FeeStructureStudentAssignmentTests
 {
     [PostgresTimetableFact]
+    public async Task CreditCarryForwardTransfersUnallocatedOverpaymentExactlyOnce()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await database.Tenants.SingleAsync();
+        var sourceSession = new AcademicSession(tenant.Id, "2027/2028-credit", new(2027, 9, 1), new(2028, 7, 1), true);
+        var sourceTerm = new AcademicTerm(tenant.Id, sourceSession.Id, "First Term", new(2027, 9, 1), new(2027, 12, 20), 1);
+        var targetSession = new AcademicSession(tenant.Id, "2028/2029-credit", new(2028, 9, 1), new(2029, 7, 1), false);
+        var targetTerm = new AcademicTerm(tenant.Id, targetSession.Id, "First Term", new(2028, 9, 1), new(2028, 12, 20), 1);
+        var student = NewStudent(tenant.Id, "CREDIT-1", "Credit");
+        var item = new FeeItem(tenant.Id, "Credit tuition", "CREDIT-TUI", null);
+        var charge = new StudentFeeCharge(tenant.Id, student.Id, sourceSession.Id, sourceTerm.Id, item.Id, null, null, "Tuition", 100000m);
+        database.AddRange(sourceSession, sourceTerm, targetSession, targetTerm, student, item, charge);
+        await database.SaveChangesAsync();
+
+        var payment = new FeePayment(tenant.Id, student.Id, sourceSession.Id, sourceTerm.Id, 120000m, "Cash", "CREDIT-RECEIPT", null, "Overpayment test");
+        var allocation = new FeePaymentAllocation(tenant.Id, payment.Id, charge.Id, 100000m);
+        charge.ApplyPayment(100000m);
+        database.AddRange(payment, allocation);
+        await database.SaveChangesAsync();
+
+        var finance = new FinanceEnhancementsService(database, new FixedTenantContext(tenant.Id), new FixedUserContext());
+        var runRequest = new CarryForwardRequest(sourceSession.Id, sourceTerm.Id, targetSession.Id, targetTerm.Id, "credit-overpayment-run");
+        var preview = await finance.PreviewCarryForwardAsync(runRequest);
+        Assert.Equal(1, preview.CreditStudents);
+        Assert.Equal(20000m, preview.CreditAmount);
+
+        var result = await finance.CarryForwardAsync(runRequest);
+        Assert.False(result.AlreadyApplied);
+        var entry = await database.CarryForwardEntries.SingleAsync(x => x.CarryForwardRunId == result.RunId);
+        Assert.False(entry.IsDebit);
+        Assert.Equal(20000m, entry.Amount);
+        Assert.NotNull(entry.SourceAdjustmentId);
+        Assert.NotNull(entry.TargetAdjustmentId);
+
+        var sourceAdjustments = await database.StudentFeeAdjustments.Where(x => x.Id == entry.SourceAdjustmentId).ToListAsync();
+        var targetAdjustments = await database.StudentFeeAdjustments.Where(x => x.Id == entry.TargetAdjustmentId).ToListAsync();
+        Assert.Equal(FinancialAdjustmentType.CarryForwardTransferOutDebit, sourceAdjustments.Single().Type);
+        Assert.Equal(FinancialAdjustmentType.CarryForwardCredit, targetAdjustments.Single().Type);
+        Assert.Equal(20000m, sourceAdjustments.Single().Amount);
+        Assert.Equal(20000m, targetAdjustments.Single().Amount);
+
+        var repeated = await finance.CarryForwardAsync(runRequest);
+        Assert.True(repeated.AlreadyApplied);
+        Assert.Equal(1, await database.CarryForwardEntries.CountAsync(x => x.CarryForwardRunId == result.RunId));
+        Assert.Equal(1, await database.StudentFeeAdjustments.CountAsync(x => x.CarryForwardEntryId == entry.Id && x.Type == FinancialAdjustmentType.CarryForwardCredit));
+    }
+
+    [PostgresTimetableFact]
+    public async Task SharedFinanceImplementationIsIsolatedAcrossTwoTenants()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenantA = await database.Tenants.SingleAsync();
+        var tenantB = new Tenant("Second finance tenant", "second-finance-tenant");
+        var sessionA = new AcademicSession(tenantA.Id, "2027/2028-A", new(2027, 9, 1), new(2028, 7, 1), true);
+        var termA = new AcademicTerm(tenantA.Id, sessionA.Id, "First Term", new(2027, 9, 1), new(2027, 12, 20), 1);
+        var sessionB = new AcademicSession(tenantB.Id, "2027/2028-B", new(2027, 9, 1), new(2028, 7, 1), true);
+        var termB = new AcademicTerm(tenantB.Id, sessionB.Id, "First Term", new(2027, 9, 1), new(2027, 12, 20), 1);
+        var studentA = NewStudent(tenantA.Id, "TENANT-A-1", "Tenant A");
+        var studentB = NewStudent(tenantB.Id, "TENANT-B-1", "Tenant B");
+        var itemA = new FeeItem(tenantA.Id, "Tuition A", "TUI-A", null);
+        var itemB = new FeeItem(tenantB.Id, "Tuition B", "TUI-B", null);
+        database.AddRange(tenantB, sessionA, termA, sessionB, termB, studentA, studentB, itemA, itemB,
+            new StudentFeeCharge(tenantA.Id, studentA.Id, sessionA.Id, termA.Id, itemA.Id, null, null, "Tuition", 20000m),
+            new StudentFeeCharge(tenantB.Id, studentB.Id, sessionB.Id, termB.Id, itemB.Id, null, null, "Tuition", 30000m));
+        await database.SaveChangesAsync();
+
+        var serviceA = new FinanceEnhancementsService(database, new FixedTenantContext(tenantA.Id), new FixedUserContext());
+        var serviceB = new FinanceEnhancementsService(database, new FixedTenantContext(tenantB.Id), new FixedUserContext());
+        var definitionA = await serviceA.CreateDiscountAsync(new CreateDiscountDefinitionRequest("Staff Discount", null, 1000m));
+        var definitionB = await serviceB.CreateDiscountAsync(new CreateDiscountDefinitionRequest("Staff Discount", null, 2000m));
+        Assert.Single(await serviceA.GetDiscountsAsync());
+        Assert.Single(await serviceB.GetDiscountsAsync());
+        Assert.NotEqual(definitionA.Id, definitionB.Id);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => serviceA.PreviewDiscountAsync(new ApplyDiscountRequest(definitionA.Id, sessionA.Id, termA.Id, "SelectedStudents", null, null, [studentB.Id], null, "tenant-a-forged")));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => serviceA.CreateAdjustmentAsync(new CreateAdjustmentRequest(studentB.Id, sessionA.Id, termA.Id, "OpeningDebit", 500m, "Forged adjustment", null)));
+
+        await serviceA.ApplyDiscountAsync(new ApplyDiscountRequest(definitionA.Id, sessionA.Id, termA.Id, "SelectedStudents", null, null, [studentA.Id], null, "same-logical-key"));
+        await serviceB.ApplyDiscountAsync(new ApplyDiscountRequest(definitionB.Id, sessionB.Id, termB.Id, "SelectedStudents", null, null, [studentB.Id], null, "same-logical-key"));
+        Assert.Equal(1, await database.StudentDiscountAssignments.CountAsync(x => x.TenantId == tenantA.Id));
+        Assert.Equal(1, await database.StudentDiscountAssignments.CountAsync(x => x.TenantId == tenantB.Id));
+
+        var carry = await serviceA.CarryForwardAsync(new CarryForwardRequest(sessionA.Id, termA.Id, sessionA.Id, null, "shared-carry-key"));
+        Assert.True(carry.StudentsProcessed >= 1);
+        Assert.Equal(0, await database.CarryForwardEntries.CountAsync(x => x.TenantId == tenantB.Id));
+        var tenantBBalance = await new FeesService(database, new FixedTenantContext(tenantB.Id)).GetStudentAccountAsync(studentB.Id, termB.Id);
+        Assert.Equal(30000m, tenantBBalance.TotalCharges);
+    }
+    [PostgresTimetableFact]
+    public async Task SharedFinanceEnhancementsApplyDiscountsAdjustmentsAndCarryForwardIdempotently()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await database.Tenants.SingleAsync();
+        var session = new AcademicSession(tenant.Id, "2027/2028", new(2027, 9, 1), new(2028, 7, 1), true);
+        var sourceTerm = new AcademicTerm(tenant.Id, session.Id, "First Term", new(2027, 9, 1), new(2027, 12, 20), 1);
+        var targetSession = new AcademicSession(tenant.Id, "2028/2029", new(2028, 9, 1), new(2029, 7, 1), false);
+        var targetTerm = new AcademicTerm(tenant.Id, targetSession.Id, "First Term", new(2028, 9, 1), new(2028, 12, 20), 1);
+        var campus = new Campus(tenant.Id, "Main campus");
+        var level = new AcademicLevel(tenant.Id, "SS1", "Senior", 1);
+        var classGroup = new ClassGroup(tenant.Id, campus.Id, level.Id, "SS1 A");
+        var student = NewStudent(tenant.Id, "FIN-1", "Finance");
+        database.AddRange(session, sourceTerm, targetSession, targetTerm, campus, level, classGroup, student, new StudentEnrollment(tenant.Id, student.Id, session.Id, level.Id, classGroup.Id, new(2027, 9, 1), true));
+        var item = new FeeItem(tenant.Id, "Tuition", "TUI-FIN", null);
+        database.Add(item);
+        database.Add(new StudentFeeCharge(tenant.Id, student.Id, session.Id, sourceTerm.Id, item.Id, null, null, "Tuition", 150000m));
+        await database.SaveChangesAsync();
+
+        var finance = new FinanceEnhancementsService(database, new FixedTenantContext(tenant.Id), new FixedUserContext());
+        var definition = await finance.CreateDiscountAsync(new CreateDiscountDefinitionRequest("Staff Discount", null, 20000m));
+        var preview = await finance.PreviewDiscountAsync(new ApplyDiscountRequest(definition.Id, session.Id, sourceTerm.Id, "SelectedStudents", null, null, [student.Id], null));
+        Assert.Equal(1, preview.StudentCount);
+        await finance.ApplyDiscountAsync(new ApplyDiscountRequest(definition.Id, session.Id, sourceTerm.Id, "SelectedStudents", null, null, [student.Id], null));
+        await finance.CreateAdjustmentAsync(new CreateAdjustmentRequest(student.Id, session.Id, sourceTerm.Id, "OpeningCredit", 10000m, "Opening credit", "Prior term"));
+        var account = await new FeesService(database, new FixedTenantContext(tenant.Id)).GetStudentAccountAsync(student.Id, sourceTerm.Id);
+        Assert.Equal(20000m, account.Discounts);
+        Assert.Equal(10000m, account.CreditAdjustments);
+        Assert.Equal(120000m, account.OutstandingBalance);
+
+        var carry = new CarryForwardRequest(session.Id, sourceTerm.Id, targetSession.Id, targetTerm.Id, "finance-test-run");
+        var carryResult = await finance.CarryForwardAsync(carry);
+        Assert.False(carryResult.AlreadyApplied);
+        var repeated = await finance.CarryForwardAsync(carry);
+        Assert.True(repeated.AlreadyApplied);
+        Assert.Equal(carryResult.RunId, repeated.RunId);
+        Assert.Equal(1, await database.CarryForwardEntries.CountAsync(x => x.TenantId == tenant.Id));
+        Assert.Equal(120000m, await database.StudentFeeAdjustments.Where(x => x.TenantId == tenant.Id && x.AcademicSessionId == targetSession.Id).SumAsync(x => x.Amount));
+    }
+    [PostgresTimetableFact]
     public async Task ZeroAssignmentsReconcileHistoricalChargesAndProtectPaidCharges()
     {
         using var factory = new AuthenticationFactory();
@@ -531,5 +668,17 @@ public sealed class FeeStructureStudentAssignmentTests
     {
         public Guid TenantId { get; } = tenantId;
         public string TenantSlug => "test-school";
+    }
+
+    private sealed class FixedUserContext : ICurrentUserContext
+    {
+        public bool IsAuthenticated => true;
+        public bool IsPlatformSuperAdmin => false;
+        public Guid UserId { get; } = Guid.NewGuid();
+        public Guid MembershipId { get; } = Guid.NewGuid();
+        public string Email => "finance@test.local";
+        public IReadOnlyCollection<string> Roles => ["Administrator"];
+        public IReadOnlyCollection<string> Permissions => ["finance.read", "finance.configure"];
+        public bool HasPermission(string permission) => Permissions.Contains(permission);
     }
 }

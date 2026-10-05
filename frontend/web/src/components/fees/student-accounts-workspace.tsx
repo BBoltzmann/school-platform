@@ -25,6 +25,11 @@ type Account = {
   appliedPayments: number;
   outstandingBalance: number;
   creditBalance: number;
+  discounts?: number;
+  debitAdjustments?: number;
+  creditAdjustments?: number;
+  unallocatedPaymentCredit?: number;
+  ledger?: { type: string; description: string; debit: number; credit: number; occurredAtUtc: string }[];
   charges: {
     id: string;
     feeStructureId: string | null;
@@ -402,6 +407,17 @@ export function StudentAccountsWorkspace({
           </div>
 
           <section className="rounded-xl border bg-card p-5">
+            <h2 className="font-semibold">Account breakdown</h2>
+            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <Breakdown label="Discounts" value={money(account.discounts ?? 0)} />
+              <Breakdown label="Debit adjustments" value={money(account.debitAdjustments ?? 0)} />
+              <Breakdown label="Credit adjustments" value={money(account.creditAdjustments ?? 0)} />
+              <Breakdown label="Unallocated payment credit" value={money(account.unallocatedPaymentCredit ?? account.creditBalance)} />
+            </div>
+            {account.ledger && account.ledger.length > 0 && <div className="mt-5 overflow-x-auto"><table className="w-full text-sm"><thead className="border-b text-left"><tr><th className="py-2">Activity</th><th className="py-2">Description</th><th className="py-2 text-right">Debit</th><th className="py-2 text-right">Credit</th></tr></thead><tbody className="divide-y">{account.ledger.map((entry, index) => <tr key={`${entry.type}-${entry.occurredAtUtc}-${index}`}><td className="py-2 capitalize">{entry.type}</td><td className="py-2">{entry.description}</td><td className="py-2 text-right">{entry.debit ? money(entry.debit) : "—"}</td><td className="py-2 text-right">{entry.credit ? money(entry.credit) : "—"}</td></tr>)}</tbody></table></div>}
+          </section>
+
+          <section className="rounded-xl border bg-card p-5">
             <div className="flex items-center justify-between gap-3">
               <div><h2 className="font-semibold">Add Optional Fee Component</h2><p className="mt-1 text-xs text-muted-foreground">Add an assigned optional component with a student-specific amount.</p></div>
               <Plus className="h-5 w-5 text-muted-foreground" />
@@ -592,6 +608,10 @@ function Metric({
       </div>
     </div>
   );
+}
+
+function Breakdown({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg bg-muted/40 p-3"><p className="text-muted-foreground">{label}</p><p className="mt-1 font-semibold">{value}</p></div>;
 }
 
 function money(

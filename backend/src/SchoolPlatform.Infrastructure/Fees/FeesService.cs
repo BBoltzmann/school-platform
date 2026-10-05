@@ -1135,6 +1135,31 @@ public sealed class FeesService : IFeesService
                 totalPayments - applied,
                 0m);
 
+        var discountsApplied = await _database.StudentDiscountAssignments
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.StudentId == studentId && (x.AcademicTermId == academicTermId || x.AcademicTermId == null) && x.Status == FinanceRecordStatus.Active)
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+        var discountDefinitionIds = discountsApplied.Select(x => x.DiscountDefinitionId).Distinct().ToArray();
+        var discountNames = await _database.DiscountDefinitions.AsNoTracking()
+            .Where(x => x.TenantId == tenantId && discountDefinitionIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var adjustments = await _database.StudentFeeAdjustments
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.StudentId == studentId && (x.AcademicTermId == academicTermId || x.AcademicTermId == null))
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+        var activeDiscountTotal = discountsApplied.Sum(x => x.AppliedAmount);
+        var debitAdjustments = adjustments.Where(x => x.Status == FinanceRecordStatus.Active && (x.Type is FinancialAdjustmentType.OpeningDebit or FinancialAdjustmentType.ManualDebit or FinancialAdjustmentType.CarryForwardDebit or FinancialAdjustmentType.CarryForwardTransferOutDebit)).Sum(x => x.Amount);
+        var creditAdjustments = adjustments.Where(x => x.Status == FinanceRecordStatus.Active && (x.Type is FinancialAdjustmentType.OpeningCredit or FinancialAdjustmentType.ManualCredit or FinancialAdjustmentType.CarryForwardCredit or FinancialAdjustmentType.CarryForwardTransferOutCredit)).Sum(x => x.Amount);
+        var unallocatedCredit = credit;
+        var netBalance = outstanding - activeDiscountTotal + debitAdjustments - creditAdjustments - unallocatedCredit;
+        var ledger = new List<StudentFeeLedgerEntryResult>();
+        ledger.AddRange(charges.Select(x => new StudentFeeLedgerEntryResult("charge", x.Description, x.Amount, 0m, x.CreatedAtUtc)));
+        ledger.AddRange(discountsApplied.Select(x => new StudentFeeLedgerEntryResult("discount", discountNames.GetValueOrDefault(x.DiscountDefinitionId) ?? "Discount", 0m, x.AppliedAmount, x.CreatedAtUtc)));
+        ledger.AddRange(adjustments.Select(x => new StudentFeeLedgerEntryResult("adjustment", x.Description, x.Type is FinancialAdjustmentType.OpeningDebit or FinancialAdjustmentType.ManualDebit or FinancialAdjustmentType.CarryForwardDebit or FinancialAdjustmentType.CarryForwardTransferOutDebit ? x.Amount : 0m, x.Type is FinancialAdjustmentType.OpeningCredit or FinancialAdjustmentType.ManualCredit or FinancialAdjustmentType.CarryForwardCredit or FinancialAdjustmentType.CarryForwardTransferOutCredit ? x.Amount : 0m, x.CreatedAtUtc)));
+        ledger.AddRange(activePayments.Select(x => new StudentFeeLedgerEntryResult("payment", x.ReceiptNumber, 0m, x.Amount, x.CreatedAtUtc)));
+
         return new StudentFeeAccountResult(
             student.Id,
             student.AdmissionNumber,
@@ -1142,8 +1167,8 @@ public sealed class FeesService : IFeesService
             academicTermId,
             totalCharges,
             applied,
-            outstanding,
-            credit,
+            Math.Max(netBalance, 0m),
+            Math.Max(-netBalance, 0m),
             charges
                 .Select(x =>
                     ToChargeResult(
@@ -1200,7 +1225,14 @@ public sealed class FeesService : IFeesService
                             })
                             .ToList());
                 })
-                .ToList());
+                .ToList(),
+            activeDiscountTotal,
+            debitAdjustments,
+            creditAdjustments,
+            unallocatedCredit,
+            adjustments.Select(x => new StudentFeeAdjustmentResult(x.Id, x.Type.ToString(), x.Amount, x.Description, x.Reason, x.Status == FinanceRecordStatus.Reversed, x.CreatedAtUtc)).ToList(),
+            discountsApplied.Select(x => new StudentDiscountResult(x.Id, discountNames.GetValueOrDefault(x.DiscountDefinitionId) ?? "Discount", x.AppliedAmount, x.Status == FinanceRecordStatus.Reversed, x.CreatedAtUtc)).ToList(),
+            ledger.OrderBy(x => x.OccurredAtUtc).ToList());
     }
 
     public async Task<FeePaymentResult> RecordPaymentAsync(
@@ -1243,7 +1275,7 @@ public sealed class FeesService : IFeesService
         }
 
         var receiptNumber =
-            $"ARC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+            $"RCPT-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
 
         var payment =
             new FeePayment(
