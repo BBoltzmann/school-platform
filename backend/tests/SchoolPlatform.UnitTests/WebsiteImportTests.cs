@@ -68,6 +68,32 @@ public sealed class WebsiteImportTests
         Assert.Equal("School", draft.Title);
     }
 
+    [Fact]
+    public async Task DuplicateHtmlAttributesDoNotAbortLogoExtraction()
+    {
+        using var client = new HttpClient(new Handler("<html><body><img src='/assets/logo.png' WIDTH='' width='120' width='240' alt='School Logo' /></body></html>"));
+        var draft = await new WebsiteImportService(client).ScanAsync("https://example.com/");
+        Assert.Contains("https://example.com/assets/logo.png", draft.LogoCandidates);
+    }
+
+    [Fact]
+    public async Task BrandEvidenceOutranksGenericFrameworkVariablesAndFindsAddress()
+    {
+        using var client = new HttpClient(new Handler("<html><head><style>:root { --bs-primary: #0D6EFD; --school-brand: rgb(18, 52, 86); } header { background-color: #123456; } body { color: #54595F; }</style></head><body><header>School</header><address>12 Independence Avenue, Luanda</address></body></html>"));
+        var draft = await new WebsiteImportService(client).ScanAsync("https://example.com/");
+        Assert.Equal("12 Independence Avenue, Luanda", draft.Address);
+        Assert.Equal("#123456", draft.ColorCandidatesDetailed!.First().Value);
+        Assert.DoesNotContain(draft.ColorCandidatesDetailed, x => x.Value == "#0D6EFD" && x.RoleSuggestion == "primary");
+    }
+
+    [Fact]
+    public async Task SchemaPostalAddressIsUsedWhenNoAddressElementExists()
+    {
+        using var client = new HttpClient(new Handler("<html><script type='application/ld+json'>{\"@type\":\"PostalAddress\",\"streetAddress\":\"45 School Road\",\"addressLocality\":\"Luanda\"}</script></html>"));
+        var draft = await new WebsiteImportService(client).ScanAsync("https://example.com/");
+        Assert.Equal("45 School Road, Luanda", draft.Address);
+    }
+
     private sealed class Handler(string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

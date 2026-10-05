@@ -52,7 +52,9 @@ public static class PlatformAdminEndpoints
     {
         if (!await IsAuthorized(db, user)) return Results.Forbid();
         try { var result = await action(); return created ? Results.Created("", result) : Results.Ok(result); }
-        catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return Results.Json(new { error = new { code = "scan_invalid", message = ex.Message } }, statusCode: 400); }
+        catch (OperationCanceledException) { return Results.Json(new { error = new { code = "scan_timeout", message = "The website scan did not finish in time." } }, statusCode: 504); }
+        catch (Exception) { return Results.Json(new { error = new { code = "scan_failed", message = "The website scan could not be completed. Please retry." } }, statusCode: 502); }
     }
 
     private static async Task<bool> IsAuthorized(SchoolPlatformDbContext db, ICurrentUserContext user)

@@ -79,7 +79,7 @@ export function StudentsDirectory({
         <div className="grid w-full gap-3 sm:grid-cols-[minmax(220px,1fr)_180px_170px] lg:max-w-3xl">
           <label className="relative block">
             <span className="sr-only">Search students</span>
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, admission no. or class" className="pl-9" />
           </label>
           <label className="text-xs font-medium text-muted-foreground">
