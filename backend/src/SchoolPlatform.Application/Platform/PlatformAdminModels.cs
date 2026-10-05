@@ -18,7 +18,7 @@ public sealed record PlatformLoginResult(
 
 public sealed record CreatePlatformSchoolRequest(
     string Name,
-    string Slug,
+    string? Slug,
     string CampusName,
     string AdministratorFirstName,
     string AdministratorLastName,
@@ -69,7 +69,10 @@ public sealed record PlatformDashboardResult(
 
 public sealed record PlatformSchoolDetails(
     PlatformSchoolSummary Summary,
-    IReadOnlyCollection<PlatformCampusSummary> Campuses);
+    IReadOnlyCollection<PlatformCampusSummary> Campuses,
+    IReadOnlyCollection<PlatformAdministratorSummary> Administrators);
+
+public sealed record PlatformAdministratorSummary(Guid UserId, string Name, string Email, string Status);
 
 public sealed record PlatformCampusSummary(Guid Id, string Name, bool IsActive);
 
@@ -88,6 +91,7 @@ public interface IPlatformAdminService
     Task<IReadOnlyCollection<PlatformSchoolSummary>> GetSchoolsAsync(CancellationToken cancellationToken = default);
     Task<PlatformSchoolDetails> GetSchoolAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<PlatformSchoolProvisionedResult> CreateSchoolAsync(CreatePlatformSchoolRequest request, CancellationToken cancellationToken = default);
+    Task<string> ReissueAdministratorInvitationAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken = default);
     Task<PlatformSchoolDeletionEligibility> GetDeletionEligibilityAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task DeleteEmptySchoolAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task SetSchoolActiveAsync(Guid tenantId, bool active, CancellationToken cancellationToken = default);

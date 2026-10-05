@@ -46,14 +46,25 @@ public sealed class PlatformAdminService(
             .OrderBy(x => x.Name)
             .Select(x => new PlatformCampusSummary(x.Id, x.Name, x.IsActive))
             .ToListAsync(cancellationToken);
-        return new(summary, campuses);
+        var administrators = await (from membership in database.TenantMemberships.AsNoTracking()
+            join user in database.Users.AsNoTracking() on membership.UserId equals user.Id
+            join assignment in database.MembershipRoles.AsNoTracking() on membership.Id equals assignment.MembershipId
+            join role in database.Roles.AsNoTracking() on assignment.RoleId equals role.Id
+            where membership.TenantId == tenantId && membership.IsActive && role.IsActive && role.Name == "Administrator"
+            select new { user.Id, user.Email, user.FirstName, user.LastName, user.PasswordHash }).Distinct().ToListAsync(cancellationToken);
+        var pendingIds = await database.PasswordResetTokens.AsNoTracking().Where(x => x.TenantId == tenantId && x.UsedAtUtc == null && x.ExpiresAtUtc > DateTime.UtcNow).Select(x => x.UserId).ToListAsync(cancellationToken);
+        return new(summary, campuses, administrators.Select(x => new PlatformAdministratorSummary(x.Id, $"{x.FirstName} {x.LastName}".Trim(), x.Email, x.PasswordHash is not null ? "Active" : pendingIds.Contains(x.Id) ? "Pending setup" : "Invitation expired")).ToList());
     }
 
     public async Task<PlatformSchoolProvisionedResult> CreateSchoolAsync(CreatePlatformSchoolRequest request, CancellationToken cancellationToken = default)
     {
+        var slug = string.IsNullOrWhiteSpace(request.Slug)
+            ? await FindAvailableSlugAsync(SchoolSlug.FromName(request.Name), cancellationToken)
+            : SchoolSlug.Normalize(request.Slug);
+        if (string.IsNullOrWhiteSpace(slug)) throw new InvalidOperationException("A school name is required to generate a login code.");
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         var result = await bootstrap.BootstrapAsync(new BootstrapSchoolRequest(
-            request.Name, request.Slug, request.CampusName,
+            request.Name, slug, request.CampusName,
             request.AdministratorEmail, request.AdministratorFirstName, request.AdministratorLastName), cancellationToken);
         var profile = new SchoolPlatform.Domain.Tenancy.TenantProfile(result.TenantId);
         var branding = new UpdateTenantBrandingRequest(
@@ -77,6 +88,29 @@ public sealed class PlatformAdminService(
             : null;
         await transaction.CommitAsync(cancellationToken);
         return new(await GetSchoolAsync(result.TenantId, cancellationToken), pending, setupLink);
+    }
+
+    private async Task<string> FindAvailableSlugAsync(string baseSlug, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(baseSlug)) return string.Empty;
+        var candidate = baseSlug; var suffix = 2;
+        while (await database.Tenants.AnyAsync(x => x.Slug == candidate, cancellationToken)) candidate = $"{baseSlug}-{suffix++}";
+        return candidate;
+    }
+
+    public async Task<string> ReissueAdministratorInvitationAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var identity = await (from membership in database.TenantMemberships
+            join user in database.Users on membership.UserId equals user.Id
+            join roleAssignment in database.MembershipRoles on membership.Id equals roleAssignment.MembershipId
+            join role in database.Roles on roleAssignment.RoleId equals role.Id
+            where membership.TenantId == tenantId && membership.UserId == userId && membership.IsActive && role.Name == "Administrator" && role.IsActive && user.IsActive
+            select new { user.Email, user.PasswordHash }).SingleOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException("Administrator was not found for this school.");
+        if (identity.PasswordHash is not null) throw new InvalidOperationException("This administrator already has an active account.");
+        await database.PasswordResetTokens.Where(x => x.TenantId == tenantId && x.UserId == userId && x.UsedAtUtc == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAtUtc, DateTime.UtcNow), cancellationToken);
+        return await CreateAdministratorActivationAsync(userId, tenantId, identity.Email, cancellationToken)
+            ?? throw new InvalidOperationException("Administrator setup links are not configured.");
     }
 
     public async Task<PlatformSchoolDeletionEligibility> GetDeletionEligibilityAsync(Guid tenantId, CancellationToken cancellationToken = default)
@@ -244,7 +278,7 @@ public sealed class PlatformAdminService(
         database.PasswordResetTokens.Add(new SchoolPlatform.Domain.Identity.PasswordResetToken(
             userId, tenantId, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))), now.AddMinutes(30)));
         await database.SaveChangesAsync(cancellationToken);
-        var setupLink = new Uri(baseUrl, $"reset-password?token={raw}").AbsoluteUri;
+        var setupLink = new Uri(baseUrl, $"account/setup?token={raw}").AbsoluteUri;
         try
         {
             await emailSender.SendPasswordResetAsync(email, new Uri(setupLink), cancellationToken);

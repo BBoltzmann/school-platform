@@ -23,7 +23,8 @@ public sealed class SchoolBootstrapService : ISchoolBootstrapService
         BootstrapSchoolRequest request,
         CancellationToken cancellationToken = default)
     {
-        var slug = request.Slug.Trim().ToLowerInvariant();
+        var slug = SchoolSlug.Normalize(request.Slug);
+        if (string.IsNullOrWhiteSpace(slug)) throw new SchoolBootstrapConflictException("A valid school slug is required.");
         var email = request.AdminEmail.Trim().ToLowerInvariant();
 
         if (await _database.Tenants.AnyAsync(

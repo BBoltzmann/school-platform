@@ -51,6 +51,17 @@ public static class AuthenticationRecoveryEndpoints
                 ? Results.BadRequest(new { error = "This reset link is invalid or expired. Request a new link." })
                 : Results.Ok(new { tenantSlug = slug });
         });
+        group.MapGet("/setup", async (string? token, IPasswordRecoveryService recovery, CancellationToken cancellationToken) =>
+        {
+            var context = await recovery.GetSetupInvitationAsync(token ?? string.Empty, cancellationToken);
+            return context is null ? Results.Json(new { error = "This administrator setup link is invalid." }, statusCode: 400) : Results.Ok(context);
+        });
+        group.MapPost("/setup", async (ResetPasswordRequest request, IPasswordRecoveryService recovery, CancellationToken cancellationToken) =>
+        {
+            if (!PasswordPolicy.IsValid(request.NewPassword)) return Results.BadRequest(new { error = PasswordPolicy.Description });
+            var slug = await recovery.ResetAsync(request, cancellationToken);
+            return slug is null ? Results.BadRequest(new { error = "This administrator setup link is invalid, expired, or already used." }) : Results.Ok(new { tenantSlug = slug });
+        });
         group.MapPost("/signup", async (CreateSchoolRequest request, ISchoolSignupService signup,
             CancellationToken cancellationToken) =>
         {

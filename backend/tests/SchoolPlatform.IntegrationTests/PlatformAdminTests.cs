@@ -103,7 +103,7 @@ public sealed class PlatformAdminTests
     public async Task PlatformAdminCanPersistTenantBrandingWithoutChangingTenantBootstrapData()
     {
         using var factory = new AuthenticationFactory();
-        await factory.InitializeAsync();
+        var client = await factory.InitializeAsync();
         using var scope = factory.Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
         var service = scope.ServiceProvider.GetRequiredService<IPlatformAdminService>();
@@ -146,7 +146,7 @@ public sealed class PlatformAdminTests
     public async Task NewSchoolAdministratorReceivesOneTimeSetupLink()
     {
         using var factory = new AuthenticationFactory();
-        await factory.InitializeAsync();
+        var client = await factory.InitializeAsync();
         using var scope = factory.Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
         var service = scope.ServiceProvider.GetRequiredService<IPlatformAdminService>();
@@ -157,10 +157,20 @@ public sealed class PlatformAdminTests
             "Invited Demo", "invited-demo", "Demo campus", "New", "Administrator", "new-admin@example.com"));
 
         Assert.True(created.AdministratorActivationPending);
-        Assert.Contains("/reset-password?token=", created.AdministratorSetupLink);
+        Assert.Contains("/account/setup?token=", created.AdministratorSetupLink);
         var invited = await database.Users.SingleAsync(x => x.Email == "new-admin@example.com");
         Assert.True(await database.TenantMemberships.AnyAsync(x => x.TenantId == created.School.Summary.TenantId && x.UserId == invited.Id));
         Assert.Single(await database.PasswordResetTokens.Where(x => x.TenantId == created.School.Summary.TenantId && x.UserId == invited.Id).ToListAsync());
+        var token = new Uri(created.AdministratorSetupLink!).Query["?token=".Length..];
+        var recovery = scope.ServiceProvider.GetRequiredService<IPasswordRecoveryService>();
+        var context = await recovery.GetSetupInvitationAsync(token);
+        Assert.Equal("valid", context?.Status);
+        Assert.Equal("invited-demo", context?.SchoolSlug);
+        Assert.Equal("new-admin@example.com", context?.Email);
+        Assert.Equal("invited-demo", await recovery.ResetAsync(new ResetPasswordRequest(token, "SecurePassword123")));
+        Assert.Null(await recovery.ResetAsync(new ResetPasswordRequest(token, "AnotherPassword123")));
+        var login = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest("new-admin@example.com", "SecurePassword123", "invited-demo"));
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
     }
 
     [PostgresTimetableFact]

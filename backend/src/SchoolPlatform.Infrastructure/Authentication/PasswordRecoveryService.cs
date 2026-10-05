@@ -95,6 +95,25 @@ public sealed class PasswordRecoveryService(
         }
     }
 
+    public async Task<SetupInvitationContext?> GetSetupInvitationAsync(string token, CancellationToken cancellationToken = default)
+    {
+        if (token is not { Length: 64 } || !token.All(char.IsAsciiHexDigit)) return null;
+        var now = clock.GetUtcNow().UtcDateTime;
+        var hash = Hash(token);
+        var invitation = await (from reset in database.PasswordResetTokens.AsNoTracking()
+            join user in database.Users.AsNoTracking() on reset.UserId equals user.Id
+            join tenant in database.Tenants.AsNoTracking() on reset.TenantId equals tenant.Id
+            where reset.TokenHash == hash
+            select new { reset, user, tenant }).SingleOrDefaultAsync(cancellationToken);
+        if (invitation is null) return null;
+        var status = invitation.reset.UsedAtUtc is not null
+            ? "used"
+            : invitation.reset.ExpiresAtUtc <= now || !invitation.user.IsActive || !invitation.tenant.IsActive
+                ? "expired"
+                : "valid";
+        return new(invitation.tenant.Name, invitation.tenant.Slug, invitation.user.Email, invitation.reset.ExpiresAtUtc, status);
+    }
+
     // TEMPORARY: the recovery code is a privileged, deployment-wide credential.
     // No account lookup or mutation is allowed until the server-side code is verified.
     public async Task<string?> DirectResetAsync(DirectPasswordResetRequest request, CancellationToken cancellationToken = default)

@@ -26,6 +26,8 @@ public static class PlatformAdminEndpoints
             await ExecuteIfAuthorized(db, user, () => service.GetSchoolAsync(tenantId, ct)));
         group.MapPost("/schools", async (CreatePlatformSchoolRequest request, SchoolPlatformDbContext db, ICurrentUserContext user, IPlatformAdminService service, CancellationToken ct) =>
             await ExecuteIfAuthorized(db, user, () => service.CreateSchoolAsync(request, ct), true));
+        group.MapPost("/schools/{tenantId:guid}/administrators/{userId:guid}/reissue", async (Guid tenantId, Guid userId, SchoolPlatformDbContext db, ICurrentUserContext user, IPlatformAdminService service, CancellationToken ct) =>
+            await ExecuteIfAuthorized(db, user, async () => new { setupLink = await service.ReissueAdministratorInvitationAsync(tenantId, userId, ct) }));
         group.MapGet("/schools/{tenantId:guid}/deletion-eligibility", async (Guid tenantId, SchoolPlatformDbContext db, ICurrentUserContext user, IPlatformAdminService service, CancellationToken ct) =>
             await ExecuteIfAuthorized(db, user, () => service.GetDeletionEligibilityAsync(tenantId, ct)));
         group.MapDelete("/schools/{tenantId:guid}", async (Guid tenantId, SchoolPlatformDbContext db, ICurrentUserContext user, IPlatformAdminService service, CancellationToken ct) =>

@@ -21,9 +21,16 @@ test("platform admin has a separate login and school control plane", () => {
   assert.match(read("app/super-admin/schools/new/page.tsx"), /if \(saving\) return/);
   assert.match(read("app/super-admin/schools/new/page.tsx"), /contactEmail: form\.contactEmail/);
   assert.match(read("app/super-admin/schools/new/page.tsx"), /mission: form\.mission/);
+  assert.match(read("app/super-admin/schools/new/page.tsx"), /function slugFromName/);
+  assert.match(read("app/super-admin/schools/new/page.tsx"), /slug: null/);
+  assert.match(read("app/super-admin/schools/new/page.tsx"), /School login code/);
   assert.doesNotMatch(read("app/super-admin/schools/new/page.tsx"), /const branding = await fetch/);
   assert.match(read("app/super-admin/schools/[tenantId]/page.tsx"), /Suspend School/);
   assert.match(read("app/super-admin/schools/[tenantId]/page.tsx"), /Danger Zone/);
   assert.match(read("app/super-admin/schools/[tenantId]/page.tsx"), /Delete school permanently/);
   assert.match(read("app/api/platform-admin/schools/[tenantId]/deletion-eligibility/route.ts"), /deletion-eligibility/);
+  assert.match(read("app/account/setup/page.tsx"), /Set up your administrator account/);
+  assert.doesNotMatch(read("app/account/setup/page.tsx"), /Recovery code/);
+  assert.match(read("app/account/setup/page.tsx"), /schoolSlug/);
+  assert.match(read("app/api/auth/setup/route.ts"), /api\/auth\/setup/);
 });

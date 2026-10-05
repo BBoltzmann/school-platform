@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/api/backend-url";
 import { RECOVERY_MESSAGE, SIGNUP_MESSAGE } from "@/lib/auth/recovery";
 
-type Action = "direct-password-reset" | "forgot-password" | "reset-password" | "signup";
+type Action = "direct-password-reset" | "forgot-password" | "reset-password" | "setup" | "signup";
 const errors: Record<Action, string> = {
   "direct-password-reset": "Unable to change password. Check the recovery details and password requirements.",
   "forgot-password": "Check your email address and school slug.",
   "reset-password": "This reset link is invalid or expired, or the password does not meet the requirements. Request a new link if needed.",
+  setup: "This administrator setup link is invalid or expired. Request a new invitation.",
   signup: "Check the school details and password requirements.",
 };
 
@@ -47,7 +48,7 @@ export async function publicAuthPost(request: Request, action: Action) {
         : "The authentication service is unavailable. Please try again later.";
       return NextResponse.json({ error }, { status });
     }
-    if (action === "reset-password" || action === "direct-password-reset") {
+    if (action === "reset-password" || action === "direct-password-reset" || action === "setup") {
       const result = await response.json();
       if (typeof result?.tenantSlug !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(result.tenantSlug)) {
         throw new Error("Invalid reset response");
