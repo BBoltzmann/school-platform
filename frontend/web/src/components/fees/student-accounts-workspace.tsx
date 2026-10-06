@@ -5,8 +5,10 @@ import {
   useState,
 } from "react";
 import {
+  ChevronDown,
   LoaderCircle,
   Plus,
+  Search,
   UserRound,
 } from "lucide-react";
 
@@ -123,6 +125,9 @@ export function StudentAccountsWorkspace({
   const [manualFeeItemId, setManualFeeItemId] = useState(setup.feeItems[0]?.id ?? "");
   const [manualAmount, setManualAmount] = useState("");
   const [discounts, setDiscounts] = useState<{ id: string; name: string; defaultAmount: number; isActive: boolean }[]>([]);
+  const [studentQuery, setStudentQuery] = useState("");
+  const [studentOpen, setStudentOpen] = useState(false);
+  const [activeStudentIndex, setActiveStudentIndex] = useState(0);
 
   async function loadAccount() {
     if (
@@ -296,56 +301,76 @@ export function StudentAccountsWorkspace({
     await loadAccount();
   }
 
-  const classOptions = Array.from(new Set(
-    setup.students
-      .map(student => student.className)
-      .filter((value): value is string => Boolean(value))
-  )).sort();
-  const filteredStudents = setup.students.filter(student =>
-    !classFilter || student.className === classFilter
-  );
+  const classOptions = setup.classes.map(item => item.name).concat(
+    setup.students.map(student => student.className).filter((value): value is string => Boolean(value))
+  ).filter((value, index, values) => values.indexOf(value) === index);
+  const selectedStudent = setup.students.find(student => student.id === studentId);
+  const normalizedQuery = studentQuery.trim().toLowerCase();
+  const pickerStudents = setup.students
+    .filter(student => !classFilter || student.className === classFilter)
+    .filter(student => {
+      if (!normalizedQuery) return true;
+      const haystack = `${student.name} ${student.admissionNumber} ${displayAdmissionNumber(student.admissionNumber)} ${student.className ?? ""}`.toLowerCase();
+      return haystack.includes(normalizedQuery);
+    })
+    .sort((left, right) => {
+      const leftClass = classOptions.indexOf(left.className ?? "");
+      const rightClass = classOptions.indexOf(right.className ?? "");
+      return (leftClass < 0 ? Number.MAX_SAFE_INTEGER : leftClass) - (rightClass < 0 ? Number.MAX_SAFE_INTEGER : rightClass) || left.name.localeCompare(right.name);
+    });
+
+  function chooseStudent(id: string) {
+    if (!setup.students.some(student => student.id === id)) return;
+    setStudentId(id);
+    setStudentQuery("");
+    setStudentOpen(false);
+    setActiveStudentIndex(0);
+  }
 
   useEffect(() => {
-    if (filteredStudents.length > 0 && !filteredStudents.some(student => student.id === studentId)) {
+    if (pickerStudents.length > 0 && !pickerStudents.some(student => student.id === studentId)) {
       // Keep the selected account inside the active class filter.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setStudentId(filteredStudents[0].id);
+      setStudentId(pickerStudents[0].id);
     }
-  }, [filteredStudents, studentId]);
+  }, [pickerStudents, studentId]);
 
   return (
     <div className="space-y-6">
       <section className="rounded-xl border bg-card p-5">
         <div className="grid gap-4 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
-          <div>
+          <div className="relative">
             <label className="mb-2 block text-sm font-medium">
               Student
             </label>
-
-            <select
-              value={studentId}
-              onChange={event =>
-                setStudentId(
-                  event.target.value
-                )
-              }
-              className={inputClass}
-            >
-              {filteredStudents.map(
-                student => (
-                  <option
-                    key={student.id}
-                    value={student.id}
-                  >
-                    {student.name}
-                    {" — "}
-                    {
-                      student.admissionNumber
-                    }
-                  </option>
-                )
-              )}
-            </select>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                role="combobox"
+                aria-expanded={studentOpen}
+                aria-controls="student-picker-options"
+                aria-autocomplete="list"
+                value={studentOpen ? studentQuery : selectedStudent ? formatStudent(selectedStudent) : ""}
+                onFocus={() => setStudentOpen(true)}
+                onChange={event => { setStudentQuery(event.target.value); setStudentOpen(true); setActiveStudentIndex(0); }}
+                onKeyDown={event => {
+                  if (event.key === "ArrowDown") { event.preventDefault(); setStudentOpen(true); setActiveStudentIndex(index => Math.min(index + 1, Math.max(pickerStudents.length - 1, 0))); }
+                  if (event.key === "ArrowUp") { event.preventDefault(); setActiveStudentIndex(index => Math.max(index - 1, 0)); }
+                  if (event.key === "Enter" && studentOpen && pickerStudents[activeStudentIndex]) { event.preventDefault(); chooseStudent(pickerStudents[activeStudentIndex].id); }
+                  if (event.key === "Escape") { setStudentOpen(false); setStudentQuery(""); }
+                }}
+                placeholder="Search students by name, class or number"
+                className={`${inputClass} pl-9 pr-9`}
+              />
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+            {studentOpen && <div id="student-picker-options" role="listbox" className="absolute z-20 mt-1 max-h-80 w-full overflow-auto rounded-md border bg-popover p-1 shadow-lg">
+              {pickerStudents.length === 0 && <p className="px-3 py-4 text-sm text-muted-foreground">No students found</p>}
+              {pickerStudents.map((student, index) => <div key={student.id} role="option" aria-selected={student.id === studentId} onMouseDown={event => { event.preventDefault(); chooseStudent(student.id); }} className={`cursor-pointer rounded px-3 py-2 text-sm ${index === activeStudentIndex ? "bg-muted" : "hover:bg-muted/70"}`}>
+                {index === 0 || pickerStudents[index - 1]?.className !== student.className ? <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{student.className ?? "Unassigned class"}</div> : null}
+                <div className="font-medium">{formatStudent(student)}</div>
+              </div>)}
+            </div>}
           </div>
 
           <div>
@@ -664,4 +689,12 @@ function money(
         0,
     }
   ).format(value);
+}
+
+function displayAdmissionNumber(value: string) {
+  return /^ARC\//i.test(value) ? value.slice(4) : value;
+}
+
+function formatStudent(student: { name: string; className: string | null; admissionNumber: string }) {
+  return `${student.name} · ${student.className ?? "Unassigned"} · ${displayAdmissionNumber(student.admissionNumber)}`;
 }

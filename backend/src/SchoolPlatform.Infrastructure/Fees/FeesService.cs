@@ -947,8 +947,8 @@ public sealed class FeesService : IFeesService
             x.FeeStructureLineId == line.Id, cancellationToken);
         if (existing is not null)
         {
-            if (existing.AmountPaid > 0 || await _database.FeePaymentAllocations.AnyAsync(x => x.TenantId == tenantId && x.StudentFeeChargeId == existing.Id, cancellationToken))
-                throw new InvalidOperationException("This optional component already has payment history.");
+            if (existing.AmountPaid > 0 || await HasActivePaymentAllocationAsync(existing.Id, cancellationToken))
+                throw new InvalidOperationException("This optional component has an active payment allocation.");
             existing.UpdateAmount(request.Amount);
             existing.Reactivate();
             await _database.SaveChangesAsync(cancellationToken);
@@ -1004,14 +1004,22 @@ public sealed class FeesService : IFeesService
             if (line?.IsRequired == true)
                 throw new InvalidOperationException("Required generated charges cannot be removed from an individual account.");
         }
-        var hasAllocations = await _database.FeePaymentAllocations.AnyAsync(
-            x => x.TenantId == tenantId && x.StudentFeeChargeId == chargeId,
-            cancellationToken);
-        if (charge.AmountPaid > 0m || hasAllocations)
-            throw new InvalidOperationException("This charge has payment history and cannot be removed. Reverse or reallocate the payment first.");
+        var hasActiveAllocation = await HasActivePaymentAllocationAsync(chargeId, cancellationToken);
+        if (charge.AmountPaid > 0m || hasActiveAllocation)
+            throw new InvalidOperationException("This charge cannot be removed because an active payment is allocated to it.");
         charge.Deactivate();
         await _database.SaveChangesAsync(cancellationToken);
     }
+
+    private Task<bool> HasActivePaymentAllocationAsync(Guid chargeId, CancellationToken cancellationToken) =>
+        _database.FeePaymentAllocations.AnyAsync(
+                allocation => allocation.TenantId == _tenantContext.TenantId &&
+                allocation.StudentFeeChargeId == chargeId &&
+                _database.FeePayments.Any(payment =>
+                    payment.TenantId == allocation.TenantId &&
+                    payment.Id == allocation.FeePaymentId &&
+                    !payment.IsReversed),
+            cancellationToken);
 
     public async Task<StudentFeeAccountResult> GetStudentAccountAsync(
         Guid studentId,

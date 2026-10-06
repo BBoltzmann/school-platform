@@ -586,6 +586,53 @@ public sealed class FeeStructureStudentAssignmentTests
     }
 
     [PostgresTimetableFact]
+    public async Task OptionalChargeRemovalIgnoresVoidedPaymentAllocationsButBlocksActiveOnes()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await database.Tenants.SingleAsync();
+        var session = new AcademicSession(tenant.Id, "2027/2028-removal", new(2027, 9, 1), new(2028, 7, 1), true);
+        var term = new AcademicTerm(tenant.Id, session.Id, "First Term", new(2027, 9, 1), new(2027, 12, 20), 1);
+        var campus = new Campus(tenant.Id, "Main campus");
+        var level = new AcademicLevel(tenant.Id, "JSS", "Junior", 1);
+        var classGroup = new ClassGroup(tenant.Id, campus.Id, level.Id, "JSS 1");
+        var student = NewStudent(tenant.Id, "REMOVE-OPTIONAL", "Optional");
+        var enrollment = new StudentEnrollment(tenant.Id, student.Id, session.Id, level.Id, classGroup.Id, new(2027, 9, 1), true);
+        var item = new FeeItem(tenant.Id, "Sports Wear", "SPORTS", null);
+        var structure = new FeeStructure(tenant.Id, session.Id, term.Id, "JSS 1 extras", "Class", classGroup.Id);
+        var line = new FeeStructureLine(tenant.Id, structure.Id, item.Id, 15000m, false);
+        database.AddRange(session, term, campus, level, classGroup, student, enrollment, item, structure, line);
+        await database.SaveChangesAsync();
+        var service = new FeesService(database, new FixedTenantContext(tenant.Id));
+        await service.ReplaceAssignedStudentsAsync(structure.Id, new([student.Id]));
+        var charge = await service.AddOptionalFeeComponentAsync(student.Id, new(term.Id, line.Id, 15000m));
+
+        var first = await service.RecordPaymentAsync(student.Id, new(term.Id, 5000m, "Cash", "REMOVE-VOIDED", null));
+        var allocation = await database.FeePaymentAllocations.SingleAsync(x => x.FeePaymentId == first.Id && x.StudentFeeChargeId == charge.Id);
+        await service.VoidPaymentAsync(student.Id, first.Id, new("Entered in error"));
+        var afterVoid = await database.StudentFeeCharges.SingleAsync(x => x.Id == charge.Id);
+        Assert.Equal(0m, afterVoid.AmountPaid);
+        Assert.True(await database.FeePayments.Where(x => x.Id == first.Id).Select(x => x.IsReversed).SingleAsync());
+        Assert.True(await database.FeePaymentAllocations.AnyAsync(x => x.Id == allocation.Id));
+
+        var second = await service.RecordPaymentAsync(student.Id, new(term.Id, 2000m, "Cash", "REMOVE-ACTIVE", null));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RemoveStudentChargeAsync(student.Id, charge.Id));
+        await service.VoidPaymentAsync(student.Id, second.Id, new("Entered in error"));
+        await service.RemoveStudentChargeAsync(student.Id, charge.Id);
+
+        Assert.False(await database.StudentFeeCharges.Where(x => x.Id == charge.Id).Select(x => x.IsActive).SingleAsync());
+        Assert.Equal(2, await database.FeePaymentAllocations.CountAsync(x => x.StudentFeeChargeId == charge.Id));
+        var account = await service.GetStudentAccountAsync(student.Id, term.Id);
+        Assert.Empty(account.Charges);
+        Assert.Equal(0m, account.OutstandingBalance);
+        Assert.Equal(2, account.Payments.Count);
+        Assert.All(account.Payments, payment => Assert.True(payment.IsReversed));
+        Assert.All(account.Payments, payment => Assert.Single(payment.Allocations!));
+    }
+
+    [PostgresTimetableFact]
     public async Task AssignmentRejectsCrossTenantStudent()
     {
         using var factory = new AuthenticationFactory();

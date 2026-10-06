@@ -15,6 +15,7 @@ import { CreateLevelDialog } from "@/components/academics/create-level-dialog";
 import { LevelActions } from "@/components/academics/level-actions";
 import { CreateSessionDialog } from "@/components/academics/create-session-dialog";
 import { CreateSubjectDialog } from "@/components/academics/create-subject-dialog";
+import { CreateCampusDialog } from "@/components/academics/create-campus-dialog";
 import { CreateTermDialog } from "@/components/academics/create-term-dialog";
 import { getAcademicSetup } from "@/lib/api/academics";
 
@@ -425,7 +426,7 @@ export default async function AcademicsPage() {
 
       {/* Campuses */}
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="border-b px-5 py-5">
+        <div className="flex flex-col gap-4 border-b px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
           <SectionTitle
             icon={
               <Building2 className="h-5 w-5" />
@@ -433,6 +434,7 @@ export default async function AcademicsPage() {
             title="Campuses"
             description="Active campuses available for class assignment."
           />
+          <CreateCampusDialog />
         </div>
 
         {setup.campuses.length > 0 ? (

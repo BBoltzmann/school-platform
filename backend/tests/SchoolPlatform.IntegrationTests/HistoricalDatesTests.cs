@@ -39,6 +39,31 @@ public sealed class HistoricalDatesTests
     }
 
     [Fact]
+    public async Task AdministratorCanAddTenantScopedCampusWithoutChangingDefaultCampus()
+    {
+        using var factory = new AuthenticationFactory();
+        using var client = await factory.InitializeAsync();
+        await LoginAsync(client);
+
+        using var beforeScope = factory.Services.CreateScope();
+        var beforeDb = beforeScope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await beforeDb.Tenants.SingleAsync(x => x.Slug == "antioch-college");
+        var defaultCampus = await beforeDb.Campuses.Where(x => x.TenantId == tenant.Id).SingleAsync();
+
+        var response = await client.PostAsJsonAsync("/api/academics/campuses", new CreateCampusRequest("Primary School"));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var result = (await response.Content.ReadFromJsonAsync<CampusResult>())!;
+        Assert.Equal("Primary School", result.Name);
+
+        using var afterScope = factory.Services.CreateScope();
+        var afterDb = afterScope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var campuses = await afterDb.Campuses.Where(x => x.TenantId == tenant.Id).ToListAsync();
+        Assert.Contains(campuses, campus => campus.Id == result.Id && campus.Name == "Primary School");
+        Assert.Contains(campuses, campus => campus.Id == defaultCampus.Id && campus.Name == defaultCampus.Name);
+        Assert.All(campuses, campus => Assert.Equal(tenant.Id, campus.TenantId));
+    }
+
+    [Fact]
     public async Task StudentHistoricalAdmissionAndPlacementDatesArePersisted()
     {
         using var factory = new AuthenticationFactory();

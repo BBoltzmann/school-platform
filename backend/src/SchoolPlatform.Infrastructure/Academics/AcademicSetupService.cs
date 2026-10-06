@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SchoolPlatform.Application.Academics;
 using SchoolPlatform.Application.Common.Security;
 using SchoolPlatform.Domain.Academics;
+using SchoolPlatform.Domain.Tenancy;
 using SchoolPlatform.Infrastructure.Persistence;
 
 namespace SchoolPlatform.Infrastructure.Academics;
@@ -112,6 +113,24 @@ public sealed class AcademicSetupService : IAcademicSetupService
             levels,
             classes,
             subjects);
+    }
+
+    public async Task<CampusResult> CreateCampusAsync(
+        CreateCampusRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var name = request.Name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("Campus name is required.");
+
+        if (await _database.Campuses.AnyAsync(x => x.TenantId == tenantId && x.Name == name, cancellationToken))
+            throw new InvalidOperationException("A campus with this name already exists.");
+
+        var campus = new Campus(tenantId, name);
+        _database.Campuses.Add(campus);
+        await _database.SaveChangesAsync(cancellationToken);
+        return new CampusResult(campus.Id, campus.Name, campus.IsActive);
     }
 
     public async Task<AcademicSessionResult> CreateSessionAsync(

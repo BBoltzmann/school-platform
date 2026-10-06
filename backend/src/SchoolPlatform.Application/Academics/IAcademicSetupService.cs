@@ -5,6 +5,10 @@ public interface IAcademicSetupService
     Task<AcademicSetupResult> GetSetupAsync(
         CancellationToken cancellationToken = default);
 
+    Task<CampusResult> CreateCampusAsync(
+        CreateCampusRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<AcademicSessionResult> CreateSessionAsync(
         CreateAcademicSessionRequest request,
         CancellationToken cancellationToken = default);

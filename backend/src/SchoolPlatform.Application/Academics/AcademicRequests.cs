@@ -1,5 +1,7 @@
 namespace SchoolPlatform.Application.Academics;
 
+public sealed record CreateCampusRequest(string Name);
+
 public sealed record CreateAcademicSessionRequest(
     string Name,
     DateOnly StartDate,

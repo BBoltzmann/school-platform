@@ -399,6 +399,29 @@ app.MapGet(
     .RequireAuthorization();
 
 app.MapPost(
+        "/api/academics/campuses",
+        async (
+            CreateCampusRequest request,
+            IAcademicSetupService academicSetupService,
+            ICurrentUserContext currentUser,
+            CancellationToken cancellationToken) =>
+        {
+            if (!currentUser.HasPermission("academics.configure"))
+                return Results.Forbid();
+
+            try
+            {
+                var result = await academicSetupService.CreateCampusAsync(request, cancellationToken);
+                return Results.Created($"/api/academics/campuses/{result.Id}", result);
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new { error = exception.Message });
+            }
+        })
+    .RequireAuthorization();
+
+app.MapPost(
         "/api/academics/sessions",
         async (
             CreateAcademicSessionRequest request,

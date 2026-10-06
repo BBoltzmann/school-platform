@@ -14,6 +14,18 @@ test("student accounts retain the detailed account workflow and finance actions"
   assert.match(page, /Reverse discount/);
 });
 
+test("student account picker searches and displays class-first identity safely", () => {
+  const page = read("components/fees/student-accounts-workspace.tsx");
+  assert.match(page, /role="combobox"/);
+  assert.match(page, /role="listbox"/);
+  assert.match(page, /ArrowDown/);
+  assert.match(page, /No students found/);
+  assert.match(page, /student\.className/);
+  assert.match(page, /displayAdmissionNumber/);
+  assert.match(page, /formatStudent/);
+  assert.match(page, /setStudentId\(id\)/);
+});
+
 test("fees management exposes student, class, and fee-structure discount application", () => {
   const page = read("components/fees/discounts-workspace.tsx");
   assert.match(page, /Student/);
