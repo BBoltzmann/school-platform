@@ -2,9 +2,12 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SchoolPlatform.Application.Authentication;
+using SchoolPlatform.Domain.Identity;
+using SchoolPlatform.Infrastructure.Authentication;
 using SchoolPlatform.Infrastructure.Persistence;
 
 namespace SchoolPlatform.IntegrationTests;
@@ -149,5 +152,81 @@ public sealed class DirectPasswordResetTests
         for (var i = 0; i < 6; i++)
             Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync(Endpoint, Request(factory) with { Email = $"unknown{i}@example.com", RecoveryCode = "wrong" })).StatusCode);
         Assert.Equal(HttpStatusCode.TooManyRequests, (await client.PostAsJsonAsync(Endpoint, Request(factory) with { Email = "another@example.com" })).StatusCode);
+    }
+
+    [Fact]
+    public async Task OperatorDryRunResolvesWithoutMutation()
+    {
+        using var factory = new AuthenticationFactory();
+        using var client = await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var user = await database.Users.SingleAsync();
+        var beforeStamp = user.SecurityStamp;
+        var service = new OperatorPasswordResetService(
+            database, new PasswordHasher<User>(), factory.Clock);
+
+        var result = await service.ResetAsync(new OperatorPasswordResetRequest(
+            "antioch-college", AuthenticationFactory.AdminEmail, "Replacement-password-456", true));
+
+        Assert.True(result.Succeeded);
+        Assert.True(result.DryRun);
+        Assert.Equal("antioch-college", result.SchoolSlug);
+        Assert.True(result.SetupCompleted);
+        Assert.Equal(beforeStamp, (await database.Users.SingleAsync()).SecurityStamp);
+        Assert.Equal(HttpStatusCode.OK, (await Login(client, AuthenticationFactory.OldPassword)).StatusCode);
+    }
+
+    [Fact]
+    public async Task OperatorResetUsesSharedHashingRevokesTokensAndPreservesMembership()
+    {
+        using var factory = new AuthenticationFactory();
+        using var client = await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var user = await database.Users.SingleAsync();
+        var tenant = await database.Tenants.SingleAsync();
+        var membership = await database.TenantMemberships.SingleAsync();
+        var roleIds = await database.MembershipRoles.Where(x => x.MembershipId == membership.Id)
+            .Select(x => x.RoleId).ToListAsync();
+        database.PasswordResetTokens.Add(new PasswordResetToken(
+            user.Id, tenant.Id, new string('A', 64), DateTime.UtcNow.AddHours(1)));
+        await database.SaveChangesAsync();
+        var oldStamp = user.SecurityStamp;
+        var service = new OperatorPasswordResetService(
+            database, new PasswordHasher<User>(), factory.Clock);
+
+        var result = await service.ResetAsync(new OperatorPasswordResetRequest(
+            " ANTIOCH-COLLEGE ", " ADMIN@ANTIOCHCOLLEGE.LOCAL ", AuthenticationFactory.NewPassword));
+
+        Assert.True(result.Succeeded);
+        Assert.NotEqual(oldStamp, (await database.Users.SingleAsync()).SecurityStamp);
+        Assert.All(await database.PasswordResetTokens.AsNoTracking().ToListAsync(), token => Assert.NotNull(token.UsedAtUtc));
+        Assert.Equal(roleIds, await database.MembershipRoles.Where(x => x.MembershipId == membership.Id)
+            .Select(x => x.RoleId).ToListAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Login(client, AuthenticationFactory.OldPassword)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Login(client, AuthenticationFactory.NewPassword)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("wrong-school", AuthenticationFactory.AdminEmail)]
+    [InlineData("antioch-college", "missing@example.com")]
+    public async Task OperatorWrongScopeDoesNotMutate(string slug, string email)
+    {
+        using var factory = new AuthenticationFactory();
+        using var client = await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var before = await database.Users.Select(x => new { x.Id, x.PasswordHash, x.SecurityStamp }).SingleAsync();
+        var service = new OperatorPasswordResetService(database, new PasswordHasher<User>(), factory.Clock);
+
+        var result = await service.ResetAsync(new OperatorPasswordResetRequest(
+            slug, email, AuthenticationFactory.NewPassword));
+
+        Assert.False(result.Succeeded);
+        var after = await database.Users.Select(x => new { x.Id, x.PasswordHash, x.SecurityStamp }).SingleAsync();
+        Assert.Equal(before.PasswordHash, after.PasswordHash);
+        Assert.Equal(before.SecurityStamp, after.SecurityStamp);
+        Assert.Equal(HttpStatusCode.OK, (await Login(client, AuthenticationFactory.OldPassword)).StatusCode);
     }
 }

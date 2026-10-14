@@ -149,10 +149,8 @@ public sealed class PasswordRecoveryService(
     {
         // Shared by email/token and temporary recovery: consume outstanding tokens,
         // use the existing domain method to rotate SecurityStamp, and save atomically.
-        await database.PasswordResetTokens.Where(x => x.UserId == user.Id && x.UsedAtUtc == null)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAtUtc, now), cancellationToken);
-        user.SetPasswordHash(passwordHasher.HashPassword(user, password));
-        await database.SaveChangesAsync(cancellationToken);
+        await PasswordChangeOperations.ChangeAsync(
+            database, passwordHasher, user, password, now, cancellationToken);
     }
 
     private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));

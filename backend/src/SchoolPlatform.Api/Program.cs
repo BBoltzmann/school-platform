@@ -211,6 +211,7 @@ builder.Services.AddSingleton<AuthAccountLimiter>();
 builder.Services.AddSingleton<ITemporaryPasswordResetAccess, TemporaryPasswordResetAccess>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<IPasswordRecoveryService, PasswordRecoveryService>();
+builder.Services.AddScoped<IOperatorPasswordResetService, OperatorPasswordResetService>();
 builder.Services.AddScoped<ISchoolSignupService, SchoolSignupService>();
 builder.Services.AddHostedService<PasswordRecoveryWorker>();
 builder.Services.AddRateLimiter(options =>
