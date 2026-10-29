@@ -11,6 +11,7 @@ import { useState } from "react";
 import { TenantBrand } from "@/components/tenant/tenant-brand";
 
 type AdminHeaderProps = {
+  tenantSlug: string;
   tenantName: string;
   logoDataUrl?: string | null;
   secondaryColor: string;
@@ -19,6 +20,7 @@ type AdminHeaderProps = {
 };
 
 export function AdminHeader({
+  tenantSlug,
   tenantName,
   logoDataUrl,
   secondaryColor,
@@ -38,7 +40,8 @@ export function AdminHeader({
         method: "POST",
       });
     } finally {
-      router.replace("/login");
+      const portal = role.toLowerCase().includes("teacher") ? "staff" : "admin";
+      router.replace(`/schools/${encodeURIComponent(tenantSlug)}/${portal}/login`);
       router.refresh();
     }
   }

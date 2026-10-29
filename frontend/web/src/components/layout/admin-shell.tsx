@@ -31,6 +31,7 @@ export function AdminShell({
   return (
     <div className="min-h-screen bg-background" style={{ "--tenant-primary": branding.primaryColor, "--tenant-secondary": branding.secondaryColor, "--accent": branding.accentColor, "--primary": branding.primaryColor, "--sidebar": branding.secondaryColor, "--sidebar-primary": branding.primaryColor, "--sidebar-ring": branding.primaryColor } as CSSProperties}>
       <AdminHeader
+        tenantSlug={tenantSlug}
         tenantName={tenantName}
         email={email}
         role={roles[0] ?? "User"}

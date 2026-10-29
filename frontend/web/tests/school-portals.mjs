@@ -1,0 +1,23 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const root = new URL("../src/", import.meta.url);
+test("school portal entry points are centralized and role-specific", () => {
+  const routes = fs.readFileSync(new URL("lib/portal-routes.ts", root), "utf8");
+  const welcome = fs.readFileSync(new URL("app/schools/[schoolSlug]/page.tsx", root), "utf8");
+  const admin = fs.readFileSync(new URL("app/schools/[schoolSlug]/admin/login/page.tsx", root), "utf8");
+  const staff = fs.readFileSync(new URL("app/schools/[schoolSlug]/staff/login/page.tsx", root), "utf8");
+  const legacy = fs.readFileSync(new URL("app/app/[tenantSlug]/login/page.tsx", root), "utf8");
+  const generic = fs.readFileSync(new URL("app/(auth)/login/page.tsx", root), "utf8");
+  const login = fs.readFileSync(new URL("components/auth/login-form.tsx", root), "utf8");
+  assert.match(routes, /schoolLoginPath/);
+  assert.match(welcome, /School administration/);
+  assert.match(welcome, />Staff</);
+  assert.match(welcome, /Guardian and student portals are not currently available/);
+  assert.match(admin, /portal="admin"/);
+  assert.match(staff, /portal="staff"/);
+  assert.match(legacy, /schools\/\$\{encodeURIComponent\(tenantSlug\)\}\/admin\/login/);
+  assert.match(generic, /redirect\(`/);
+  assert.match(login, /successPath/);
+  assert.doesNotMatch(login, /admin@antiochcollege\.local/);
+});

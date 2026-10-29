@@ -20,7 +20,7 @@ export default async function TenantLayout({
   const session = await getSessionContext();
 
   if (!session) {
-    redirect("/login");
+    redirect(`/schools/${encodeURIComponent(tenantSlug)}/admin/login`);
   }
 
   if (session.tenantSlug !== tenantSlug) {

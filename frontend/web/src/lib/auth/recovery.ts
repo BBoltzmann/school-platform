@@ -7,9 +7,8 @@ export function validPassword(password: string): boolean {
 }
 
 export function loginDestination(tenantSlug: string, reset = false): string {
-  const query = new URLSearchParams({ tenantSlug });
-  if (reset) query.set("reset", "success");
-  return `/login?${query}`;
+  const query = reset ? "?setup=success" : "";
+  return `/schools/${encodeURIComponent(tenantSlug)}/admin/login${query}`;
 }
 
 export function directResetPayload(data: FormData):

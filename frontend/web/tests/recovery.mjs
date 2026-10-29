@@ -59,7 +59,7 @@ test('reset forwards token only to backend and clears old session on success', a
   assert.deepEqual(await response.json(), { tenantSlug: 'new-school' });
   assert.match(response.headers.get('set-cookie'), /Max-Age=0/);
   assert.match(response.headers.get('set-cookie'), /HttpOnly/);
-  assert.equal(recovery.loginDestination('new-school', true), '/login?tenantSlug=new-school&reset=success');
+  assert.equal(recovery.loginDestination('new-school', true), '/schools/new-school/admin/login?setup=success');
 });
 
 test('signup is gated and uses a generic response when enabled', async () => {

@@ -14,13 +14,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export function LoginForm({ initialTenantSlug = "antioch-college", tenantLocked = false }: { initialTenantSlug?: string; tenantLocked?: boolean }) {
+export function LoginForm({ initialTenantSlug = "", tenantLocked = false, successPath }: { initialTenantSlug?: string; tenantLocked?: boolean; successPath?: string }) {
   const [tenantSlug, setTenantSlug] = useState(initialTenantSlug);
   const router = useRouter();
 
-  const [email, setEmail] = useState(
-    initialTenantSlug === "antioch-college" ? "admin@antiochcollege.local" : ""
-  );
+  const [email, setEmail] = useState("");
 
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] =
@@ -64,7 +62,9 @@ export function LoginForm({ initialTenantSlug = "antioch-college", tenantLocked 
         return;
       }
 
-      router.push(tenantLocked ? `/app/${encodeURIComponent(tenantSlug)}/dashboard` : "/");
+      const roles: string[] = Array.isArray(result.roles) ? result.roles.map((role: unknown) => String(role).toLowerCase()) : [];
+      const isTeacherOnly = roles.includes("teacher") && !roles.some(role => role.includes("administrator") || role.includes("admin"));
+      router.push(isTeacherOnly ? `/app/${encodeURIComponent(tenantSlug)}/teacher` : (successPath ?? (tenantLocked ? `/app/${encodeURIComponent(tenantSlug)}/dashboard` : "/")));
 
       router.refresh();
     } catch {

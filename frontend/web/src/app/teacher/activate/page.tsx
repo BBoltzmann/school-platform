@@ -25,7 +25,7 @@ function TeacherActivateForm() {
       const result = await response.json();
       if (!response.ok) { setError(result.error ?? "Activation could not be completed."); return; }
       setDone(true);
-      setTimeout(() => router.push(`/login?tenantSlug=${encodeURIComponent(result.tenantSlug)}`), 700);
+      setTimeout(() => router.push(`/schools/${encodeURIComponent(result.tenantSlug)}/staff/login`), 700);
     } catch {
       setError("Unable to contact the invitation service. Please try again.");
     } finally {
