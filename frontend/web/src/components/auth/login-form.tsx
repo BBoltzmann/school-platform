@@ -2,7 +2,6 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Eye,
   EyeOff,
@@ -13,10 +12,10 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { schoolHomeForRoles } from "@/lib/portal-routes";
 
-export function LoginForm({ initialTenantSlug = "", tenantLocked = false, successPath }: { initialTenantSlug?: string; tenantLocked?: boolean; successPath?: string }) {
+export function LoginForm({ initialTenantSlug = "", tenantLocked = false, }: { initialTenantSlug?: string; tenantLocked?: boolean; successPath?: string }) {
   const [tenantSlug, setTenantSlug] = useState(initialTenantSlug);
-  const router = useRouter();
 
   const [email, setEmail] = useState("");
 
@@ -62,11 +61,15 @@ export function LoginForm({ initialTenantSlug = "", tenantLocked = false, succes
         return;
       }
 
-      const roles: string[] = Array.isArray(result.roles) ? result.roles.map((role: unknown) => String(role).toLowerCase()) : [];
-      const isTeacherOnly = roles.includes("teacher") && !roles.some(role => role.includes("administrator") || role.includes("admin"));
-      router.push(isTeacherOnly ? `/app/${encodeURIComponent(tenantSlug)}/teacher` : (successPath ?? (tenantLocked ? `/app/${encodeURIComponent(tenantSlug)}/dashboard` : "/")));
-
-      router.refresh();
+      const roles: string[] = Array.isArray(result.roles) ? result.roles.map((role: unknown) => String(role)) : [];
+      const destination = schoolHomeForRoles(tenantSlug.trim().toLowerCase(), roles);
+      if (!destination) {
+        setError("Your account does not have an active school portal role. Contact your school administrator.");
+        return;
+      }
+      // Reload with the newly issued httpOnly cookie; do not reuse a cached
+      // React Server Component tree from a previous teacher/admin session.
+      window.location.replace(destination);
     } catch {
       setError(
         "Unable to connect to the server."

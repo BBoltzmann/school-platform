@@ -1,3 +1,5 @@
+"use client";
+
 import type { TeacherPortal } from "@/types/teacher";
 import { downloadTimetablePdf, printTimetable } from "@/lib/timetable-pdf";
 import { Button } from "@/components/ui/button";

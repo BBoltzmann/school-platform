@@ -24,9 +24,7 @@ export default async function TenantLayout({
   }
 
   if (session.tenantSlug !== tenantSlug) {
-    redirect(
-      `/app/${session.tenantSlug}/dashboard`
-    );
+    redirect(`/schools/${encodeURIComponent(tenantSlug)}`);
   }
 
   return (
