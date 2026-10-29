@@ -24,5 +24,5 @@ export default async function TeacherSectionPage({ params }: { params: Promise<{
     return <div className="space-y-6"><div><h1 className="text-2xl font-bold tracking-tight">My Assessments</h1><p className="mt-1 text-sm text-muted-foreground">Create assessments and enter scores for your assigned subjects. Scores share the administrator gradebook.</p></div><AssessmentWorkspace setup={setup} allowedPairs={assigned} allowDelete={false} /></div>;
   }
   const session = await getSessionContext();
-  return <TeacherPortalView data={await response.json() as TeacherPortal} section={section} schoolName={session?.tenantName ?? tenantDisplayName(tenantSlug)} />;
+  return <TeacherPortalView data={await response.json() as TeacherPortal} section={section} schoolName={session?.tenantName ?? tenantDisplayName(tenantSlug)} tenantSlug={tenantSlug} />;
 }

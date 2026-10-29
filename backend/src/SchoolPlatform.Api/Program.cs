@@ -704,6 +704,7 @@ SchoolPlatform.Api.Endpoints.TimetableTermEndpoints.MapTimetableTermEndpoints(ap
 SchoolPlatform.Api.Endpoints.AssessmentEndpoints.MapAssessmentEndpoints(app);
 
 SchoolPlatform.Api.Endpoints.AssessmentSetupEndpoints.MapAssessmentSetupEndpoints(app);
+SchoolPlatform.Api.Endpoints.StudentReportPreviewEndpoints.MapStudentReportPreviewEndpoints(app);
 
 SchoolPlatform.Api.Endpoints.InventoryEndpoints.MapInventoryEndpoints(app);
 

@@ -137,6 +137,15 @@ export default async function StudentProfilePage({
           </div>
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<Link href={`/app/${tenantSlug}/students/${student.id}/reports`} />}
+            >
+              <BookOpen className="mr-2 h-4 w-4" />
+              Report Card
+            </Button>
+
             <EditStudentDialog
               student={student}
             />

@@ -11,5 +11,5 @@ export default async function TeacherPage({ params }: { params: Promise<{ tenant
   if (!response || response.status === 401 || response.status === 403) redirect(`/app/${tenantSlug}/dashboard`);
   if (!response.ok) throw new Error("Teacher portal could not be loaded.");
   const session = await getSessionContext();
-  return <TeacherPortalView data={await response.json() as TeacherPortal} schoolName={session?.tenantName ?? tenantDisplayName(tenantSlug)} />;
+  return <TeacherPortalView data={await response.json() as TeacherPortal} schoolName={session?.tenantName ?? tenantDisplayName(tenantSlug)} tenantSlug={tenantSlug} />;
 }
