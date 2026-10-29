@@ -3,6 +3,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -104,6 +105,12 @@ export function AssessmentWorkspace({
     setLoading,
   ] = useState(false);
 
+  // A failed fetch must never be displayed as an empty gradebook.
+  const [loadStatus, setLoadStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const loadRequest = useRef(0);
+
   const [
     saving,
     setSaving,
@@ -157,9 +164,12 @@ export function AssessmentWorkspace({
 
   useEffect(() => {
     if (!selectionComplete) {
+      loadRequest.current += 1;
       setAssessments([]);
       setGradebook(null);
       setScoreSheet(null);
+      setLoadStatus("idle");
+      setError(null);
       return;
     }
 
@@ -172,71 +182,73 @@ export function AssessmentWorkspace({
   ]);
 
   async function loadWorkspace() {
+    const requestId = ++loadRequest.current;
     setLoading(true);
+    setLoadStatus("loading");
     setError(null);
     setNotice(null);
     setScoreSheet(null);
+    setAssessments([]);
+    setGradebook(null);
 
     try {
-      const query =
-        new URLSearchParams({
-          academicTermId,
-          classGroupId,
-          subjectId,
-        });
+      const query = new URLSearchParams({
+        academicTermId,
+        classGroupId,
+        subjectId,
+      });
 
-      const assessmentResponse =
-        await fetch(
-          `/api/assessments?${query}`
-        );
+      const assessmentResponse = await fetch(
+        `/api/assessments?${query}`,
+        { cache: "no-store" },
+      );
+      const assessmentResult: unknown = await assessmentResponse.json().catch(() => null);
 
-      const assessmentResult =
-        await assessmentResponse.json();
-
+      if (requestId !== loadRequest.current) return;
       if (!assessmentResponse.ok) {
-        throw new Error(
-          assessmentResult.error ??
-            "Unable to load assessments."
-        );
+        throw new Error(assessmentFetchError(assessmentResponse.status, "assessments", assessmentResult));
+      }
+      if (!Array.isArray(assessmentResult)) {
+        throw new Error("The server returned an invalid assessment list. Try again or contact the school administrator.");
       }
 
-      setAssessments(
-        assessmentResult
-      );
-
-      if (
-        assessmentResult.length === 0
-      ) {
-        setGradebook(null);
+      // No configured assessments is a valid, successful response.
+      if (assessmentResult.length === 0) {
+        setLoadStatus("ready");
         return;
       }
 
-      const gradebookResponse =
-        await fetch(
-          `/api/assessments/gradebook?${query}`
-        );
-
-      const gradebookResult =
-        await gradebookResponse.json();
-
+      const gradebookResponse = await fetch(
+        `/api/assessments/gradebook?${query}`,
+        { cache: "no-store" },
+      );
+      const gradebookResult: unknown = await gradebookResponse.json().catch(() => null);
+      if (requestId !== loadRequest.current) return;
       if (!gradebookResponse.ok) {
-        throw new Error(
-          gradebookResult.error ??
-            "Unable to load gradebook."
-        );
+        throw new Error(assessmentFetchError(gradebookResponse.status, "gradebook", gradebookResult));
+      }
+      if (!isGradebookResponse(gradebookResult)) {
+        throw new Error("The server returned an invalid gradebook. Try again or contact the school administrator.");
       }
 
-      setGradebook(
-        gradebookResult
-      );
+      // Publish the list and counts together: never show partial/stale totals.
+      setAssessments(assessmentResult as Assessment[]);
+      setGradebook(gradebookResult);
+      setLoadStatus("ready");
     } catch (exception) {
+      if (requestId !== loadRequest.current) return;
+      setLoadStatus("error");
+      setAssessments([]);
+      setGradebook(null);
       setError(
-        exception instanceof Error
-          ? exception.message
-          : "Unable to load assessments."
+        exception instanceof TypeError
+          ? "Could not reach the assessment service. Check your connection and try again."
+          : exception instanceof Error
+            ? exception.message
+            : "Unable to load assessments. Please try again.",
       );
     } finally {
-      setLoading(false);
+      if (requestId === loadRequest.current) setLoading(false);
     }
   }
 
@@ -603,12 +615,24 @@ export function AssessmentWorkspace({
     const result =
       await response.json();
 
-    if (response.ok) {
-      setGradebook(
-        result
-      );
+    if (response.ok && isGradebookResponse(result)) {
+      setGradebook(result);
+    } else {
+      setError("Scores were saved, but the updated gradebook could not be reloaded. Refresh the page to verify the totals.");
     }
   }
+
+  const enteredScores = gradebook
+    ? gradebook.students.reduce(
+        (sum, student) =>
+          sum + student.scores.filter((score) => score.rawScore !== null && score.rawScore !== undefined).length,
+        0,
+      )
+    : 0;
+  const expectedScores = gradebook
+    ? gradebook.students.length * gradebook.assessments.length
+    : 0;
+  const missingScores = Math.max(0, expectedScores - enteredScores);
 
   const configuredWeight =
     assessments.reduce(
@@ -862,7 +886,7 @@ export function AssessmentWorkspace({
               )
             }
             disabled={
-              !selectionComplete
+              !selectionComplete || loadStatus !== "ready" || loading
             }
             className="bg-tenant-primary text-black hover:bg-tenant-primary/90"
           >
@@ -871,37 +895,32 @@ export function AssessmentWorkspace({
           </Button>
         </div>
 
-        <div className="grid gap-3 border-b p-5 sm:grid-cols-3">
-          <Metric
-            label="Assessments"
-            value={String(
-              assessments.length
-            )}
-          />
-
-          <Metric
-            label="Configured Weight"
-            value={`${formatNumber(
-              configuredWeight
-            )}%`}
-          />
-
-          <Metric
-            label="Result Status"
-            value={
-              configuredWeight ===
-              100
-                ? "Complete"
-                : `${formatNumber(
-                    Math.max(
-                      0,
-                      100 -
-                        configuredWeight
-                    )
-                  )}% remaining`
-            }
-          />
+        <div className="grid gap-3 border-b p-5 sm:grid-cols-4" aria-label="Assessment completion overview">
+          <Metric label="Assessments configured" value={loadStatus === "ready" ? String(assessments.length) : "—"} />
+          <Metric label="Weight configured" value={loadStatus === "ready" ? `${formatNumber(configuredWeight)}%` : "—"} />
+          <Metric label="Scores entered" value={loadStatus === "ready" && gradebook ? `${enteredScores}/${expectedScores}` : "—"} />
+          <Metric label="Scores missing" value={loadStatus === "ready" && gradebook ? String(missingScores) : "—"} />
         </div>
+        {loadStatus === "ready" && assessments.length > 0 && (
+          <p className="border-b px-5 py-3 text-sm text-muted-foreground">
+            {configuredWeight === 100
+              ? "Assessment weights total 100%. Check that every student has a recorded mark before treating results as complete."
+              : `${formatNumber(Math.max(0, 100 - configuredWeight))}% of assessment weight remains unconfigured.`}
+            {gradebook && ` ${missingScores} score entr${missingScores === 1 ? "y" : "ies"} still missing for this class and subject.`}
+          </p>
+        )}
+        {loadStatus === "error" && (
+          <div className="space-y-3 px-5 py-10 text-center" role="status">
+            <p className="font-medium">Assessment data could not be loaded.</p>
+            <p className="text-sm text-muted-foreground">No assessment or score totals are shown until the request succeeds. This does not mean saved data has been deleted.</p>
+            <Button type="button" variant="outline" onClick={() => void loadWorkspace()}>
+              Retry loading assessments
+            </Button>
+          </div>
+        )}
+        {loadStatus === "idle" && (
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground">Select an academic term, class and subject to load assessments.</p>
+        )}
 
         {showCreate && (
           <div className="border-b bg-muted/20 p-5">
@@ -1047,11 +1066,12 @@ export function AssessmentWorkspace({
           </div>
         )}
 
-        {loading ? (
-          <div className="flex justify-center py-12">
+        {loadStatus === "loading" ? (
+          <div className="flex justify-center gap-3 py-12" role="status">
             <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading saved assessments and marks…</span>
           </div>
-        ) : assessments.length ===
+        ) : loadStatus !== "ready" ? null : assessments.length ===
           0 ? (
           <div className="py-12 text-center">
             <ClipboardList className="mx-auto h-9 w-9 text-muted-foreground" />
@@ -1091,6 +1111,18 @@ export function AssessmentWorkspace({
                       </span>
                     </div>
 
+                    {gradebook && (() => {
+                      const entered = gradebook.students.filter((student) =>
+                        student.scores.some((score) =>
+                          score.assessmentId === assessment.id && score.rawScore !== null && score.rawScore !== undefined,
+                        ),
+                      ).length;
+                      return (
+                        <p className="mt-2 text-sm font-medium">
+                          {entered} of {gradebook.students.length} students scored · {gradebook.students.length - entered} pending
+                        </p>
+                      );
+                    })()}
                     <div className="mt-2 text-xs text-muted-foreground">
                       Marked over{" "}
                       {formatNumber(
@@ -1109,6 +1141,7 @@ export function AssessmentWorkspace({
                     <Button
                       type="button"
                       variant="outline"
+                      disabled={loading}
                       onClick={() =>
                         openScoreSheet(
                           assessment.id
@@ -1426,8 +1459,64 @@ function GradebookPanel({
         </div>
       </div>
 
-      <p className="px-5 pt-3 text-xs text-muted-foreground md:hidden">Swipe horizontally to see all subject assessments and totals.</p>
-      <div className="overflow-x-auto" role="region" aria-label="Subject gradebook" tabIndex={0}>
+      <p className="px-5 pt-3 text-xs text-muted-foreground md:hidden">Review each student’s scores below without horizontal scrolling.</p>
+      {/* On phones the entire gradebook must be readable without sideways scrolling. */}
+      <div className="divide-y md:hidden" aria-label="Subject gradebook by student">
+        {gradebook.students.length === 0 ? (
+          <p className="p-5 text-sm text-muted-foreground">No students in this gradebook.</p>
+        ) : gradebook.students.map((student) => {
+          const completed = gradebook.assessments.filter((assessment) =>
+            student.scores.some((score) =>
+              score.assessmentId === assessment.assessmentId && score.rawScore != null
+            )
+          ).length;
+          return (
+            <article key={student.studentId} className="min-w-0 space-y-3 p-4">
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="break-words font-semibold">{student.studentName}</h3>
+                  <p className="text-xs text-muted-foreground">{student.admissionNumber}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-xl font-bold tabular-nums">{formatNumber(student.totalWeightedScore)}</p>
+                  <p className="text-[11px] text-muted-foreground">Current weighted total</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {completed} of {gradebook.assessments.length} assessment scores entered
+                {completed !== gradebook.assessments.length ? " · Incomplete" : ""}
+              </p>
+              <dl className="space-y-2">
+                {gradebook.assessments.map((assessment) => {
+                  const score = student.scores.find((item) => item.assessmentId === assessment.assessmentId);
+                  const hasScore = score?.rawScore != null;
+                  return (
+                    <div key={assessment.assessmentId} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-lg border px-3 py-2">
+                      <div className="min-w-0">
+                        <dt className="break-words text-sm font-medium">{assessment.title}</dt>
+                        <dd className="text-xs text-muted-foreground">
+                          Weight {formatNumber(assessment.weightPercentage)}% · Maximum {formatNumber(assessment.maximumScore)}
+                        </dd>
+                      </div>
+                      <div className="shrink-0 text-right tabular-nums">
+                        <p className="text-sm font-semibold">
+                          {score?.rawScore == null ? "Not entered" : `${formatNumber(score.rawScore)}/${formatNumber(assessment.maximumScore)}`}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {hasScore && score.weightedContribution != null
+                            ? `${formatNumber(score.weightedContribution)} weighted`
+                            : "Pending"}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </dl>
+            </article>
+          );
+        })}
+      </div>
+      <div className="hidden max-w-full overflow-x-auto overscroll-x-contain md:block" role="region" aria-label="Scrollable subject gradebook" tabIndex={0}>
         <table className="w-full min-w-[900px] text-sm">
           <thead className="border-b bg-muted/30">
             <tr>
@@ -1541,6 +1630,22 @@ function GradebookPanel({
       )}
     </section>
   );
+}
+
+function assessmentFetchError(status: number, resource: string, result: unknown): string {
+  const detail = result && typeof result === "object" && "error" in result
+    && typeof result.error === "string" ? ` ${result.error}` : "";
+  if (status === 401) return `Cannot load ${resource} (HTTP 401). Your session may have expired; sign in again.`;
+  if (status === 403) return `Cannot load ${resource} (HTTP 403). This account is not authorised for the selected class or subject.`;
+  if (status === 404) return `Cannot load ${resource} (HTTP 404). The API route is unavailable in this deployment.`;
+  if (status >= 500) return `Cannot load ${resource} (HTTP ${status}). The assessment service returned a server error; ask the administrator to check backend logs.`;
+  return `Cannot load ${resource} (HTTP ${status}).${detail}`;
+}
+
+function isGradebookResponse(value: unknown): value is AssessmentGradebook {
+  return Boolean(value && typeof value === "object" && "students" in value && Array.isArray(value.students)
+    && value.students.every((student: unknown) => student && typeof student === "object" && "scores" in student && Array.isArray(student.scores))
+    && "assessments" in value && Array.isArray(value.assessments));
 }
 
 function Field({
