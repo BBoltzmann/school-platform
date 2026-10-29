@@ -699,6 +699,78 @@ public sealed class FeeStructureStudentAssignmentTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.VoidPaymentAsync(student.Id, first.Id, new("Again")));
     }
 
+    [PostgresTimetableFact]
+    public async Task InactiveStudentKeepsDebtCanPayAndDoesNotAccrueNewGeneratedCharges()
+    {
+        using var factory = new AuthenticationFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<SchoolPlatformDbContext>();
+        var tenant = await database.Tenants.SingleAsync();
+        var session = new AcademicSession(tenant.Id, "2029/2030-inactive-debt", new(2029, 9, 1), new(2030, 7, 1), true);
+        var term = new AcademicTerm(tenant.Id, session.Id, "First Term", new(2029, 9, 1), new(2029, 12, 20), 1);
+        var campus = new Campus(tenant.Id, "Main campus");
+        var level = new AcademicLevel(tenant.Id, "Junior", "Junior", 1);
+        var classGroup = new ClassGroup(tenant.Id, campus.Id, level.Id, "JSS 1");
+        var student = NewStudent(tenant.Id, "FORMER-1", "Former");
+        var item = new FeeItem(tenant.Id, "Tuition", "FORMER-TUI", null);
+        var secondItem = new FeeItem(tenant.Id, "New charge", "FORMER-NEW", null);
+        var structure = new FeeStructure(tenant.Id, session.Id, term.Id, "Tuition", "Class", classGroup.Id);
+        var firstLine = new FeeStructureLine(tenant.Id, structure.Id, item.Id, 60000m, true);
+        database.AddRange(session, term, campus, level, classGroup, student, item, secondItem,
+            structure, firstLine,
+            new StudentEnrollment(tenant.Id, student.Id, session.Id, level.Id, classGroup.Id, new(2029, 9, 1), true));
+        await database.SaveChangesAsync();
+
+        var fees = new FeesService(database, new FixedTenantContext(tenant.Id));
+        await fees.ReplaceAssignedStudentsAsync(structure.Id, new([student.Id]));
+        var initial = await fees.GenerateChargesAsync(structure.Id);
+        Assert.Equal(1, initial.ChargesCreated);
+        student.SetStatus("Inactive");
+        await database.SaveChangesAsync();
+
+        var setup = await fees.GetSetupAsync();
+        Assert.Contains(setup.Students, x => x.Id == student.Id && x.Name.Contains("Inactive"));
+
+        // Editing a structure cannot add new charges after a student becomes inactive.
+        database.Add(new FeeStructureLine(tenant.Id, structure.Id, secondItem.Id, 12000m, true));
+        await database.SaveChangesAsync();
+        var noNewCharges = await fees.GenerateChargesAsync(structure.Id);
+        Assert.Equal(0, noNewCharges.ChargesCreated);
+        Assert.Single(await database.StudentFeeCharges.Where(x => x.StudentId == student.Id && x.IsActive).ToListAsync());
+
+        // Even after fee assignment removal, previously generated unpaid debt survives.
+        await fees.RemoveStudentAssignmentAsync(structure.Id, student.Id);
+        var reconciled = await fees.GenerateChargesAsync(structure.Id);
+        Assert.Equal(0, reconciled.DeactivatedCount);
+        Assert.Equal(0, reconciled.ChargesCreated);
+        var account = await fees.GetStudentAccountAsync(student.Id, term.Id);
+        Assert.Equal(60000m, account.OutstandingBalance);
+        Assert.Contains(await fees.GetOutstandingAsync(term.Id), x =>
+            x.StudentId == student.Id && x.OutstandingBalance == 60000m);
+
+        // Former students can pay genuine debts, but may not overpay their balance.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fees.RecordPaymentAsync(student.Id, new(term.Id, 60001m, "Cash", "OVER", null)));
+        var payment = await fees.RecordPaymentAsync(student.Id, new(term.Id, 25000m, "Cash", "FORMER-PAY", null));
+        Assert.Equal(25000m, payment.AllocatedAmount);
+        account = await fees.GetStudentAccountAsync(student.Id, term.Id);
+        Assert.Equal(35000m, account.OutstandingBalance);
+
+        // Repeated sync is idempotent even after assignments are removed.
+        var resynced = await fees.GenerateChargesAsync(structure.Id);
+        Assert.Equal(0, resynced.ChargesCreated);
+        Assert.Equal(0, resynced.DeactivatedCount);
+        Assert.Single(await database.StudentFeeCharges.Where(x => x.StudentId == student.Id && x.IsActive).ToListAsync());
+
+        var finance = new FinanceEnhancementsService(database, new FixedTenantContext(tenant.Id), new FixedUserContext());
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            finance.CreateAdjustmentAsync(new(student.Id, session.Id, term.Id, "ManualCredit", 5000m, "Departure waiver", null)));
+        await finance.CreateAdjustmentAsync(new(student.Id, session.Id, term.Id, "ManualCredit", 5000m, "Departure waiver", "Approved after financial review"));
+        account = await fees.GetStudentAccountAsync(student.Id, term.Id);
+        Assert.Equal(30000m, account.OutstandingBalance);
+    }
+
     private static Student NewStudent(Guid tenantId, string admissionNumber, string firstName) =>
         new(
             tenantId,

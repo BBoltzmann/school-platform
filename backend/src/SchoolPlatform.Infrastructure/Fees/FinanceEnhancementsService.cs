@@ -82,7 +82,22 @@ public sealed class FinanceEnhancementsService(SchoolPlatformDbContext db, ITena
     public async Task<FinanceAdjustmentResult> CreateAdjustmentAsync(CreateAdjustmentRequest request, CancellationToken ct = default)
     {
         if (!Enum.TryParse<FinancialAdjustmentType>(request.Type, true, out var type)) throw new InvalidOperationException("Unsupported adjustment type.");
-        if (!await db.Students.AnyAsync(x => x.TenantId == TenantId && x.Id == request.StudentId && x.IsActive, ct)) throw new InvalidOperationException("Student was not found.");
+        var studentIsActive = await db.Students.AsNoTracking()
+            .Where(x => x.TenantId == TenantId && x.Id == request.StudentId)
+            .Select(x => (bool?)x.IsActive)
+            .SingleOrDefaultAsync(ct);
+        if (!studentIsActive.HasValue) throw new InvalidOperationException("Student was not found.");
+        if (!studentIsActive.Value)
+        {
+            var hasHistory = await db.StudentFeeCharges.AnyAsync(x =>
+                x.TenantId == TenantId && x.StudentId == request.StudentId, ct)
+                || await db.StudentFeeAdjustments.AnyAsync(x =>
+                    x.TenantId == TenantId && x.StudentId == request.StudentId, ct);
+            if (!hasHistory)
+                throw new InvalidOperationException("Inactive student has no recorded financial history.");
+            if (string.IsNullOrWhiteSpace(request.Reason))
+                throw new InvalidOperationException("A reason is required for adjustments to inactive student accounts.");
+        }
         var adjustment = new StudentFeeAdjustment(TenantId, request.StudentId, request.AcademicSessionId, request.AcademicTermId, type, request.Amount, request.Description, request.Reason, user.UserId);
         db.StudentFeeAdjustments.Add(adjustment);
         await AuditAsync("finance.adjustment.created", nameof(StudentFeeAdjustment), adjustment.Id, null, new { request.StudentId, request.Type, request.Amount, request.Reason }, ct);

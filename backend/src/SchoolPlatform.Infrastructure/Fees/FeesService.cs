@@ -104,7 +104,13 @@ public sealed class FeesService : IFeesService
                 .AsNoTracking()
                 .Where(x =>
                     x.TenantId == tenantId &&
-                    x.IsActive)
+                    (x.IsActive ||
+                     _database.StudentFeeCharges.Any(charge =>
+                         charge.TenantId == tenantId && charge.StudentId == x.Id) ||
+                     _database.FeePayments.Any(payment =>
+                         payment.TenantId == tenantId && payment.StudentId == x.Id) ||
+                     _database.StudentFeeAdjustments.Any(adjustment =>
+                         adjustment.TenantId == tenantId && adjustment.StudentId == x.Id)))
                 .OrderBy(x => x.LastName)
                 .ThenBy(x => x.FirstName)
                 .Select(x =>
@@ -112,7 +118,8 @@ public sealed class FeesService : IFeesService
                         x.Id,
                         x.FirstName +
                         " " +
-                        x.LastName,
+                        x.LastName +
+                        (x.IsActive ? "" : " (" + x.Status + ")"),
                         x.AdmissionNumber,
                         x.Enrollments
                             .Where(enrollment =>
@@ -658,6 +665,14 @@ public sealed class FeesService : IFeesService
                 x.FeeStructureLineId.HasValue)
             .ToListAsync(cancellationToken);
         var activeCharges = generatedCharges.Where(x => x.IsActive).ToList();
+        // Historical charges for a former student stay on the ledger even if
+        // the student's fee-structure assignment has subsequently been removed.
+        // Do not create new charges for that student when a structure is edited.
+        var activeStudentIds = (await _database.Students
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && studentIds.Contains(x.Id) && x.IsActive)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken)).ToHashSet();
         var chargesByKey = generatedCharges
             .GroupBy(x => (x.StudentId, FeeStructureLineId: x.FeeStructureLineId!.Value))
             .ToDictionary(x => x.Key, x => x.OrderByDescending(v => v.IsActive).First());
@@ -677,6 +692,14 @@ public sealed class FeesService : IFeesService
         decimal total = 0m;
         foreach (var studentId in studentIds)
         {
+            if (!activeStudentIds.Contains(studentId))
+            {
+                // Enrollment/status changes are not permission to cancel a debt.
+                // Do not change any active historical charge, paid or unpaid.
+                retained += activeCharges.Count(x => x.StudentId == studentId);
+                continue;
+            }
+
             var expectedLines = expected.GetValueOrDefault(studentId, []);
             var studentCharges = activeCharges.Where(x => x.StudentId == studentId).ToList();
             var expectedKeys = expectedLines
@@ -1034,8 +1057,7 @@ public sealed class FeesService : IFeesService
                 .AsNoTracking()
                 .Where(x =>
                     x.Id == studentId &&
-                    x.TenantId == tenantId &&
-                    x.IsActive)
+                    x.TenantId == tenantId)
                 .Select(x => new
                 {
                     x.Id,
@@ -1262,18 +1284,23 @@ public sealed class FeesService : IFeesService
             request.AcademicTermId,
             cancellationToken);
 
-        var studentExists =
-            await _database.Students.AnyAsync(
-                x =>
-                    x.Id == studentId &&
-                    x.TenantId == tenantId &&
-                    x.IsActive,
-                cancellationToken);
+        var studentIsActive = await _database.Students
+            .AsNoTracking()
+            .Where(x => x.Id == studentId && x.TenantId == tenantId)
+            .Select(x => (bool?)x.IsActive)
+            .SingleOrDefaultAsync(cancellationToken);
 
-        if (!studentExists)
+        if (!studentIsActive.HasValue)
+            throw new InvalidOperationException("Student was not found.");
+
+        if (!studentIsActive.Value)
         {
-            throw new InvalidOperationException(
-                "Student was not found.");
+            // Former students may clear an existing balance, but cannot make
+            // unrelated new payments or overpayments against an empty account.
+            var account = await GetStudentAccountAsync(studentId, request.AcademicTermId, cancellationToken);
+            if (account.OutstandingBalance <= 0m || request.Amount > account.OutstandingBalance)
+                throw new InvalidOperationException(
+                    "Inactive students may only pay an existing outstanding balance. Review their ledger first.");
         }
 
         if (request.Amount <= 0)
