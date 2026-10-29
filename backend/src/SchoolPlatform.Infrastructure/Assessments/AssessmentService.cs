@@ -50,8 +50,6 @@ public sealed class AssessmentService : IAssessmentService
                 academicTermId,
                 classGroupId,
                 subjectId)
-            .OrderBy(x => x.SortOrder)
-            .ThenBy(x => x.CreatedAtUtc)
             .Select(x => new AssessmentResult(
                 x.Id,
                 x.AcademicSessionId,
@@ -605,6 +603,8 @@ public sealed class AssessmentService : IAssessmentService
                 x.ClassGroupId == classGroupId &&
                 x.SubjectId == subjectId &&
                 x.IsActive)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.CreatedAtUtc)
             .Select(x => new AssessmentProjection(
                 x.Id,
                 x.AcademicSessionId,
