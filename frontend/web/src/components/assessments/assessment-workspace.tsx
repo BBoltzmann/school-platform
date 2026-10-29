@@ -37,8 +37,12 @@ const ASSESSMENT_TYPES = [
 
 export function AssessmentWorkspace({
   setup,
+  allowedPairs,
+  allowDelete = true,
 }: {
   setup: AssessmentSetup;
+  allowedPairs?: ReadonlyArray<{ classGroupId: string; subjectId: string }>;
+  allowDelete?: boolean;
 }) {
   const [
     academicTermId,
@@ -58,7 +62,9 @@ export function AssessmentWorkspace({
     subjectId,
     setSubjectId,
   ] = useState(
-    setup.subjects[0]?.id ?? ""
+    (allowedPairs
+      ? allowedPairs.find((pair) => pair.classGroupId === setup.classes[0]?.id)?.subjectId
+      : setup.subjects[0]?.id) ?? ""
   );
 
   const [
@@ -136,12 +142,17 @@ export function AssessmentWorkspace({
     setWeightPercentage,
   ] = useState("10");
 
-  const selectionComplete =
-    Boolean(
-      academicTermId &&
-        classGroupId &&
-        subjectId
-    );
+  const visibleSubjects = allowedPairs
+    ? setup.subjects.filter((subject) =>
+        allowedPairs.some((pair) =>
+          pair.classGroupId === classGroupId && pair.subjectId === subject.id))
+    : setup.subjects;
+
+  const selectionComplete = Boolean(
+    academicTermId && classGroupId && subjectId &&
+    (!allowedPairs || allowedPairs.some((pair) =>
+      pair.classGroupId === classGroupId && pair.subjectId === subjectId))
+  );
 
   useEffect(() => {
     if (!selectionComplete) {
@@ -742,14 +753,14 @@ export function AssessmentWorkspace({
               value={
                 classGroupId
               }
-              onChange={(
-                event
-              ) =>
-                setClassGroupId(
-                  event.target
-                    .value
-                )
-              }
+              onChange={(event) => {
+                const nextClassId = event.target.value;
+                setClassGroupId(nextClassId);
+                if (allowedPairs) {
+                  setSubjectId(allowedPairs.find(
+                    (pair) => pair.classGroupId === nextClassId)?.subjectId ?? "");
+                }
+              }}
               className="h-10 w-full rounded-md border bg-background px-3 text-sm"
             >
               {setup.classes.map(
@@ -784,7 +795,7 @@ export function AssessmentWorkspace({
               }
               className="h-10 w-full rounded-md border bg-background px-3 text-sm"
             >
-              {setup.subjects.map(
+              {visibleSubjects.map(
                 (item) => (
                   <option
                     key={item.id}
@@ -800,6 +811,13 @@ export function AssessmentWorkspace({
           </Field>
         </div>
       </section>
+
+      {allowedPairs && allowedPairs.length === 0 && (
+        <p className="rounded-lg border bg-muted/20 p-4 text-sm text-muted-foreground">
+          No active teaching assignments were found for the current academic session.
+          Ask your school administrator to assign you to a class and subject.
+        </p>
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -1095,17 +1113,16 @@ export function AssessmentWorkspace({
                       Enter Scores
                     </Button>
 
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() =>
-                        deleteAssessment(
-                          assessment
-                        )
-                      }
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
+                    {allowDelete && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => deleteAssessment(assessment)}
+                        aria-label={`Delete ${assessment.title}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               )

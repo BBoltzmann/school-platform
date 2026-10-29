@@ -44,8 +44,8 @@ public static class AssessmentEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission(
-                        "students.update"))
+                if (!currentUser.HasPermission("students.update") &&
+                    !currentUser.HasPermission("teacher.subjects.read"))
                 {
                     return Results.Forbid();
                 }
@@ -56,6 +56,10 @@ public static class AssessmentEndpoints
                         await service.CreateAsync(
                             request,
                             cancellationToken));
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return Results.Forbid();
                 }
                 catch (Exception exception)
                     when (

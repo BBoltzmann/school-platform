@@ -17,14 +17,16 @@ public static class AssessmentSetupEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission(
-                        "students.read"))
+                if (!currentUser.HasPermission("students.read") &&
+                    !currentUser.HasPermission("teacher.subjects.read"))
                 {
                     return Results.Forbid();
                 }
 
                 var tenantId =
                     tenantContext.TenantId;
+
+                var isAdministrator = currentUser.HasPermission("students.read");
 
                 var currentSession =
                     await database.AcademicSessions
@@ -52,9 +54,38 @@ public static class AssessmentSetupEndpoints
                         classes =
                             Array.Empty<object>(),
                         subjects =
+                            Array.Empty<object>(),
+                        assignments =
                             Array.Empty<object>()
                     });
                 }
+
+                // Only expose the current teacher's active class/subject assignments.
+                // Administrators retain unrestricted school assessment setup.
+                var teacherAssignments = isAdministrator
+                    ? new List<(Guid ClassGroupId, Guid SubjectId)>()
+                    : (await (
+                        from staff in database.StaffMembers.AsNoTracking()
+                        join assignment in database.TeachingAssignments.AsNoTracking()
+                            on staff.Id equals assignment.StaffMemberId
+                        where staff.TenantId == tenantId &&
+                              staff.UserId == currentUser.UserId &&
+                              staff.IsActive && staff.IsTeachingStaff &&
+                              assignment.TenantId == tenantId &&
+                              assignment.AcademicSessionId == currentSession.Id &&
+                              assignment.IsActive &&
+                              assignment.ClassGroup.IsActive &&
+                              assignment.ClassGroup.AcademicLevel.IsActive &&
+                              assignment.Subject.IsActive
+                        select new { assignment.ClassGroupId, assignment.SubjectId }
+                    ).Distinct().ToListAsync(cancellationToken))
+                        .Select(x => (x.ClassGroupId, x.SubjectId))
+                        .ToList();
+
+                var allowedClassIds = teacherAssignments
+                    .Select(x => x.ClassGroupId).Distinct().ToArray();
+                var allowedSubjectIds = teacherAssignments
+                    .Select(x => x.SubjectId).Distinct().ToArray();
 
                 var terms =
                     await database.AcademicTerms
@@ -79,7 +110,8 @@ public static class AssessmentSetupEndpoints
                         .Where(x =>
                             x.TenantId == tenantId &&
                             x.IsActive &&
-                            x.AcademicLevel.IsActive)
+                            x.AcademicLevel.IsActive &&
+                            (isAdministrator || allowedClassIds.Contains(x.Id)))
                         .OrderBy(x =>
                             x.AcademicLevel.Name)
                         .ThenBy(x => x.Name)
@@ -100,7 +132,8 @@ public static class AssessmentSetupEndpoints
                         .AsNoTracking()
                         .Where(x =>
                             x.TenantId == tenantId &&
-                            x.IsActive)
+                            x.IsActive &&
+                            (isAdministrator || allowedSubjectIds.Contains(x.Id)))
                         .OrderBy(x => x.Name)
                         .Select(x => new
                         {
@@ -115,7 +148,12 @@ public static class AssessmentSetupEndpoints
                     currentSession,
                     terms,
                     classes,
-                    subjects
+                    subjects,
+                    assignments = teacherAssignments.Select(x => new
+                    {
+                        x.ClassGroupId,
+                        x.SubjectId
+                    }).ToArray()
                 });
             })
             .RequireAuthorization();

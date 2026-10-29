@@ -94,6 +94,16 @@ public sealed class AssessmentService : IAssessmentService
             request.SubjectId,
             cancellationToken);
 
+        // Teachers may create definitions only for their current assignments.
+        // The check is service-side: switching URLs or changing request IDs
+        // cannot bypass it. School administrators retain existing permissions.
+        await EnsureAssessmentAccessAsync(
+            request.AcademicTermId,
+            request.ClassGroupId,
+            request.SubjectId,
+            tenantId,
+            cancellationToken);
+
         var existingWeight =
             await _database.AcademicAssessments
                 .Where(x =>
