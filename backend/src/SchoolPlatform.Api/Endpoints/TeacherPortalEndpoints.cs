@@ -1,4 +1,5 @@
 using SchoolPlatform.Application.Common.Security;
+using SchoolPlatform.Application.Authentication;
 using SchoolPlatform.Application.Teacher;
 using SchoolPlatform.Domain.Identity;
 using SchoolPlatform.Infrastructure.Persistence;
@@ -23,7 +24,17 @@ public static class TeacherPortalEndpoints
             var preview = await service.PreviewAsync(token, cancellationToken);
             return preview is null ? Results.NotFound(new { error = "This invitation is invalid or expired." }) : Results.Ok(preview);
         });
-        app.MapPost("/api/auth/teacher-invite/activate", async (TeacherInviteActivationRequest request, ITeacherInvitationService service, CancellationToken cancellationToken) => { var slug = await service.ActivateAsync(request, cancellationToken); return slug is null ? Results.BadRequest(new { error = "This invitation is invalid, expired, revoked, already used, or the email is already registered." }) : Results.Ok(new { tenantSlug = slug }); });
+        app.MapPost("/api/auth/teacher-invite/activate", async (TeacherInviteActivationRequest request, ITeacherInvitationService service, CancellationToken cancellationToken) =>
+        {
+            if (!PasswordPolicy.IsValid(request.Password))
+                return Results.BadRequest(new { error = PasswordPolicy.Description, code = "password_policy" });
+            if (!AuthInput.EmailIsValid(request.Email))
+                return Results.BadRequest(new { error = "Enter a valid email address.", code = "invalid_email" });
+            var slug = await service.ActivateAsync(request, cancellationToken);
+            return slug is null
+                ? Results.BadRequest(new { error = "This invitation is invalid, expired, revoked, already used, or the email is already registered." })
+                : Results.Ok(new { tenantSlug = slug });
+        });
         app.MapPost("/api/staff/{staffId:guid}/link-user", async (Guid staffId, LinkTeacherUserRequest request, SchoolPlatformDbContext database, ITenantContext tenantContext, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
         {
             if (!currentUser.HasPermission("staff.update")) return Results.Forbid();

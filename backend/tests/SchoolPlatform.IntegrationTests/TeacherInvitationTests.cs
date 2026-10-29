@@ -29,8 +29,20 @@ public sealed class TeacherInvitationTests
         Assert.Equal(HttpStatusCode.OK, generated.StatusCode);
         var invite = await generated.Content.ReadFromJsonAsync<TeacherInviteResponse>();
         var token = ExtractToken(invite!.InviteUrl);
+        // Teachers activate anonymously, not with the administrator's session.
+        client.DefaultRequestHeaders.Authorization = null;
         var preview = await client.GetFromJsonAsync<TeacherPreview>($"/api/auth/teacher-invite/{token.ToLowerInvariant()}");
         Assert.Equal("ada.teacher@example.test", preview!.Email);
+
+        foreach (var password in new[] { "Short12345", "letterswithoutdigits", "123456789012", "A1" + new string('x', 127) })
+        {
+            var rejected = await client.PostAsJsonAsync("/api/auth/teacher-invite/activate", new { token, email = "ada.teacher@example.test", password });
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+            var error = await rejected.Content.ReadFromJsonAsync<ActivationError>();
+            Assert.Equal(PasswordPolicy.Description, error!.Error);
+            Assert.Equal("password_policy", error.Code);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/auth/teacher-invite/{token}")).StatusCode);
+        }
 
         var activation = await client.PostAsJsonAsync("/api/auth/teacher-invite/activate", new { token, email = "ada.teacher@example.test", password = "Teacher-password-123" });
         Assert.Equal(HttpStatusCode.OK, activation.StatusCode);
@@ -69,4 +81,5 @@ public sealed class TeacherInvitationTests
 
     private sealed record TeacherInviteResponse(string InviteUrl, DateTime ExpiresAtUtc);
     private sealed record TeacherPreview(string TenantName, string StaffName, string? Email, DateTime ExpiresAtUtc);
+    private sealed record ActivationError(string Error, string? Code);
 }
