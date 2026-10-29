@@ -35,6 +35,7 @@ export function AdminShell({
         tenantName={tenantName}
         email={email}
         role={roles[0] ?? "User"}
+        roles={roles}
         logoDataUrl={branding.logoDataUrl}
         secondaryColor={branding.secondaryColor}
       />

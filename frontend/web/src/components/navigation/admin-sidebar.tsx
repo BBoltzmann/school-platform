@@ -12,15 +12,16 @@ type AdminSidebarProps = {
   roles?: string[];
 };
 
-export function AdminSidebar({
+/** One navigation tree for the fixed desktop sidebar and the mobile drawer. */
+export function SidebarNavigation({
   tenantSlug,
   roles = [],
-}: AdminSidebarProps) {
+  onNavigate,
+}: AdminSidebarProps & { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed bottom-0 left-0 top-16 z-30 hidden w-64 overflow-y-auto border-r border-sidebar-border bg-sidebar lg:block">
-      <nav className="space-y-6 px-4 py-6">
+      <nav aria-label="School portal" className="space-y-6 px-4 py-6">
         {(roles.includes("Teacher") ? teacherNavigation : adminNavigation).map((group) => (
           <section key={group.label}>
             <div className="mb-2 px-3 text-[11px] font-bold tracking-wider text-tenant-primary">
@@ -42,6 +43,8 @@ export function AdminSidebar({
                   <Link
                     key={item.title}
                     href={href}
+                    onClick={onNavigate}
+                    aria-current={active ? "page" : undefined}
                     className={[
                       "group flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition",
                       active
@@ -65,6 +68,13 @@ export function AdminSidebar({
           </section>
         ))}
       </nav>
+  );
+}
+
+export function AdminSidebar({ tenantSlug, roles = [] }: AdminSidebarProps) {
+  return (
+    <aside className="fixed bottom-0 left-0 top-16 z-30 hidden w-64 overflow-y-auto border-r border-sidebar-border bg-sidebar lg:block">
+      <SidebarNavigation tenantSlug={tenantSlug} roles={roles} />
     </aside>
   );
 }

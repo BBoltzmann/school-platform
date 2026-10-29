@@ -9,6 +9,7 @@ import {
   BookOpenCheck,
   CheckCircle2,
   ClipboardList,
+  Download,
   LoaderCircle,
   Plus,
   Save,
@@ -400,6 +401,10 @@ export function AssessmentWorkspace({
     } finally {
       setLoading(false);
     }
+  }
+
+  function updateScore(studentId: string, value: string) {
+    setScores((current) => ({ ...current, [studentId]: value }));
   }
 
   async function saveScores() {
@@ -1180,7 +1185,60 @@ export function AssessmentWorkspace({
             </Button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* On phones, entering one score per student is easier than scrolling a wide table. */}
+          <div className="divide-y md:hidden">
+            {scoreSheet.students.map((student) => {
+              const calculated = currentContribution[student.studentId];
+              return (
+                <div key={student.studentId} className="space-y-3 p-4">
+                  <div>
+                    <div className="font-medium">{student.studentName}</div>
+                    <div className="text-xs text-muted-foreground">{student.admissionNumber}</div>
+                  </div>
+                  <label className="block text-sm font-medium" htmlFor={`mobile-score-${student.studentId}`}>
+                    Raw score (maximum {formatNumber(scoreSheet.assessment.maximumScore)})
+                  </label>
+                  <input
+                    id={`mobile-score-${student.studentId}`}
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max={scoreSheet.assessment.maximumScore}
+                    step="0.01"
+                    value={scores[student.studentId] ?? ""}
+                    onChange={(event) => updateScore(student.studentId, event.target.value)}
+                    className="h-11 w-full rounded-md border bg-background px-3 text-base"
+                  />
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <span className="block text-muted-foreground">Percentage</span>
+                      <strong className="mt-1 block text-sm">
+                        {calculated?.percentage == null ? "—" : `${formatNumber(calculated.percentage)}%`}
+                      </strong>
+                    </div>
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <span className="block text-muted-foreground">Weighted mark</span>
+                      <strong className="mt-1 block text-sm">
+                        {calculated?.contribution == null ? "—" : `${formatNumber(calculated.contribution)} / ${formatNumber(scoreSheet.assessment.weightPercentage)}`}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="p-4">
+              <Button
+                type="button"
+                onClick={saveScores}
+                disabled={saving}
+                className="w-full bg-tenant-primary text-black hover:bg-tenant-primary/90"
+              >
+                {saving ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Scores
+              </Button>
+            </div>
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[780px] text-sm">
               <thead className="border-b bg-muted/30 text-left">
                 <tr>
@@ -1251,21 +1309,7 @@ export function AssessmentWorkspace({
                                 ] ??
                                 ""
                               }
-                              onChange={(
-                                event
-                              ) =>
-                                setScores(
-                                  (
-                                    current
-                                  ) => ({
-                                    ...current,
-                                    [student.studentId]:
-                                      event
-                                        .target
-                                        .value,
-                                  })
-                                )
-                              }
+                              onChange={(event) => updateScore(student.studentId, event.target.value)}
                               className="h-9 w-24 rounded-md border bg-background px-2"
                             />
 
@@ -1354,6 +1398,19 @@ function GradebookPanel({
           </p>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href={`/api/assessments/gradebook/export?${new URLSearchParams({
+              academicTermId: gradebook.academicTermId,
+              classGroupId: gradebook.classGroupId,
+              subjectId: gradebook.subjectId,
+            })}`}
+            download="subject-gradebook.xlsx"
+            className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted"
+          >
+            <Download className="h-4 w-4" />
+            Export Excel (draft)
+          </a>
         <div
           className={
             gradebook.isComplete
@@ -1366,9 +1423,11 @@ function GradebookPanel({
           )}
           /100% configured
         </div>
+        </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <p className="px-5 pt-3 text-xs text-muted-foreground md:hidden">Swipe horizontally to see all subject assessments and totals.</p>
+      <div className="overflow-x-auto" role="region" aria-label="Subject gradebook" tabIndex={0}>
         <table className="w-full min-w-[900px] text-sm">
           <thead className="border-b bg-muted/30">
             <tr>
