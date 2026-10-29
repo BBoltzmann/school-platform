@@ -18,20 +18,21 @@ public static class AssessmentEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission(
-                        "students.read"))
+                if (!currentUser.HasPermission("students.read") &&
+                    !currentUser.HasPermission("teacher.subjects.read"))
                 {
                     return Results.Forbid();
                 }
 
-                var result =
-                    await service.GetAssessmentsAsync(
-                        academicTermId,
-                        classGroupId,
-                        subjectId,
-                        cancellationToken);
-
-                return Results.Ok(result);
+                try
+                {
+                    var result = await service.GetAssessmentsAsync(academicTermId, classGroupId, subjectId, cancellationToken);
+                    return Results.Ok(result);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return Results.Forbid();
+                }
             })
             .RequireAuthorization();
 
@@ -153,8 +154,8 @@ public static class AssessmentEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission(
-                        "students.read"))
+                if (!currentUser.HasPermission("students.read") &&
+                    !currentUser.HasPermission("teacher.subjects.read"))
                 {
                     return Results.Forbid();
                 }
@@ -165,6 +166,10 @@ public static class AssessmentEndpoints
                         await service.GetScoreSheetAsync(
                             assessmentId,
                             cancellationToken));
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return Results.Forbid();
                 }
                 catch (InvalidOperationException exception)
                 {
@@ -187,8 +192,8 @@ public static class AssessmentEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission(
-                        "students.update"))
+                if (!currentUser.HasPermission("students.update") &&
+                    !currentUser.HasPermission("teacher.subjects.read"))
                 {
                     return Results.Forbid();
                 }
@@ -200,6 +205,10 @@ public static class AssessmentEndpoints
                             assessmentId,
                             request,
                             cancellationToken));
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return Results.Forbid();
                 }
                 catch (Exception exception)
                     when (
@@ -227,8 +236,8 @@ public static class AssessmentEndpoints
                 ICurrentUserContext currentUser,
                 CancellationToken cancellationToken) =>
             {
-                if (!currentUser.HasPermission(
-                        "students.read"))
+                if (!currentUser.HasPermission("students.read") &&
+                    !currentUser.HasPermission("teacher.subjects.read"))
                 {
                     return Results.Forbid();
                 }
@@ -241,6 +250,10 @@ public static class AssessmentEndpoints
                             classGroupId,
                             subjectId,
                             cancellationToken));
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return Results.Forbid();
                 }
                 catch (InvalidOperationException exception)
                 {

@@ -22,13 +22,16 @@ public sealed class AssessmentService : IAssessmentService
 
     private readonly SchoolPlatformDbContext _database;
     private readonly ITenantContext _tenantContext;
+    private readonly ICurrentUserContext _currentUser;
 
     public AssessmentService(
         SchoolPlatformDbContext database,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        ICurrentUserContext currentUser)
     {
         _database = database;
         _tenantContext = tenantContext;
+        _currentUser = currentUser;
     }
 
     public async Task<IReadOnlyCollection<AssessmentResult>>
@@ -39,6 +42,8 @@ public sealed class AssessmentService : IAssessmentService
             CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
+
+        await EnsureAssessmentAccessAsync(academicTermId, classGroupId, subjectId, tenantId, cancellationToken);
 
         return await BuildAssessmentQuery(
                 tenantId,
@@ -263,6 +268,8 @@ public sealed class AssessmentService : IAssessmentService
                 tenantId,
                 cancellationToken);
 
+        await EnsureAssessmentAccessAsync(assessment, tenantId, cancellationToken);
+
         var students =
             await GetStudentsForAssessmentAsync(
                 assessment,
@@ -330,6 +337,8 @@ public sealed class AssessmentService : IAssessmentService
                 assessmentId,
                 tenantId,
                 cancellationToken);
+
+        await EnsureAssessmentAccessAsync(assessment, tenantId, cancellationToken);
 
         var students =
             await GetStudentsForAssessmentAsync(
@@ -456,6 +465,8 @@ public sealed class AssessmentService : IAssessmentService
 
         var first =
             assessments.First();
+
+        await EnsureAssessmentAccessAsync(first, tenantId, cancellationToken);
 
         var students =
             await GetStudentsForAssessmentAsync(
@@ -713,6 +724,35 @@ public sealed class AssessmentService : IAssessmentService
             ?? throw new InvalidOperationException(
                 "A current academic session is required.");
     }
+
+    private async Task EnsureAssessmentAccessAsync(
+        Guid academicTermId,
+        Guid classGroupId,
+        Guid subjectId,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        if (_currentUser.HasPermission("students.read") || _currentUser.HasPermission("students.update"))
+            return;
+
+        var allowed = await (
+            from staff in _database.StaffMembers.AsNoTracking()
+            join assignment in _database.TeachingAssignments.AsNoTracking() on staff.Id equals assignment.StaffMemberId
+            where staff.TenantId == tenantId && staff.UserId == _currentUser.UserId && staff.IsTeachingStaff && staff.IsActive
+                && assignment.TenantId == tenantId && assignment.AcademicSession.IsCurrent && assignment.AcademicSession.IsActive
+                && assignment.ClassGroupId == classGroupId && assignment.SubjectId == subjectId && assignment.IsActive
+                && assignment.AcademicSession.Terms.Any(term => term.Id == academicTermId && term.IsActive)
+            select assignment.Id).AnyAsync(cancellationToken);
+
+        if (!allowed)
+            throw new UnauthorizedAccessException("You are not assigned to this class and subject.");
+    }
+
+    private async Task EnsureAssessmentAccessAsync(
+        AssessmentResult assessment,
+        Guid tenantId,
+        CancellationToken cancellationToken) =>
+        await EnsureAssessmentAccessAsync(assessment.AcademicTermId, assessment.ClassGroupId, assessment.SubjectId, tenantId, cancellationToken);
 
     private async Task ValidateTermAsync(
         Guid tenantId,

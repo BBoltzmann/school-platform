@@ -12,6 +12,8 @@ public static class TeacherPortalEndpoints
     {
         app.MapPost("/api/staff/{staffId:guid}/teacher-invite", async (Guid staffId, ITeacherInvitationService service, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
         { if (!currentUser.HasPermission("staff.update")) return Results.Forbid(); try { return Results.Ok(await service.GenerateAsync(staffId, cancellationToken)); } catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); } }).RequireAuthorization();
+        app.MapPost("/api/staff/{staffId:guid}/teacher-invite/reset", async (Guid staffId, ITeacherInvitationService service, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
+        { if (!currentUser.HasPermission("staff.update")) return Results.Forbid(); try { return Results.Ok(await service.ResetAsync(staffId, cancellationToken)); } catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); } }).RequireAuthorization();
         app.MapPost("/api/staff/{staffId:guid}/teacher-invite/revoke", async (Guid staffId, ITeacherInvitationService service, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
         { if (!currentUser.HasPermission("staff.update")) return Results.Forbid(); await service.RevokeAsync(staffId, cancellationToken); return Results.NoContent(); }).RequireAuthorization();
         app.MapGet("/api/staff/{staffId:guid}/teacher-access-status", async (Guid staffId, ITeacherInvitationService service, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>

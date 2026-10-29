@@ -7,9 +7,10 @@ test("teacher invitation activation and admin controls are wired", () => {
   const staff = fs.readFileSync(new URL("components/staff/teacher-invite-actions.tsx", root), "utf8");
   const detail = fs.readFileSync(new URL("app/app/[tenantSlug]/(portal)/staff/[id]/page.tsx", root), "utf8");
   assert.match(activation, /Activate Your Teacher Account/);
+  assert.match(activation, /readOnly=\{Boolean\(preview\?\.email\)\}/);
   assert.match(activation, /teacher-invite\/activate/);
   assert.match(staff, /teacher-invite/);
-  assert.match(staff, /Copy Invite/);
+  assert.match(staff, /Copy activation link/);
   assert.match(staff, /Teacher Portal Access/);
   assert.match(staff, /status could not be loaded/);
   assert.match(detail, /TeacherInviteActions/);
