@@ -188,7 +188,7 @@ public sealed class AssessmentService : IAssessmentService
             await _database.AcademicAssessmentScores
                 .Where(x =>
                     x.TenantId == tenantId &&
-                    x.AcademicAssessmentId == assessment.Id)
+                    x.AcademicAssessmentId == assessment.Id && !x.IsVoided)
                 .MaxAsync(
                     x => (decimal?)x.RawScore,
                     cancellationToken);
@@ -290,7 +290,7 @@ public sealed class AssessmentService : IAssessmentService
                 .Where(x =>
                     x.TenantId == tenantId &&
                     x.AcademicAssessmentId ==
-                        assessment.Id)
+                        assessment.Id && !x.IsVoided)
                 .ToDictionaryAsync(
                     x => x.StudentId,
                     x => x.RawScore,
@@ -415,8 +415,9 @@ public sealed class AssessmentService : IAssessmentService
                         item.StudentId,
                         out var scoreToRemove))
                 {
-                    _database.AcademicAssessmentScores.Remove(
-                        scoreToRemove);
+                    if (!scoreToRemove.IsVoided)
+                        throw new InvalidOperationException(
+                            "Clearing a saved mark requires an explicit reason. Use Remove incorrect mark on the student's report preview.");
                 }
 
                 continue;
@@ -426,8 +427,14 @@ public sealed class AssessmentService : IAssessmentService
                     item.StudentId,
                     out var existing))
             {
-                existing.UpdateScore(
-                    item.RawScore.Value);
+                var oldValue = existing.IsVoided ? (decimal?)null : existing.RawScore;
+                existing.UpdateScore(item.RawScore.Value);
+                if (oldValue != item.RawScore.Value)
+                    _database.AuditLogs.Add(new SchoolPlatform.Domain.Audit.AuditLog(
+                        tenantId, _currentUser.UserId, "AssessmentScoreSaved", "AcademicAssessmentScore",
+                        existing.Id, System.Text.Json.JsonSerializer.Serialize(new { previous = oldValue }),
+                        System.Text.Json.JsonSerializer.Serialize(new { current = item.RawScore.Value })));
+
             }
             else
             {
@@ -480,7 +487,8 @@ public sealed class AssessmentService : IAssessmentService
             await GetStudentsForAssessmentAsync(
                 first,
                 tenantId,
-                cancellationToken);
+                cancellationToken,
+                includePreviouslyScored: true);
 
         var assessmentIds =
             assessments
@@ -493,7 +501,7 @@ public sealed class AssessmentService : IAssessmentService
                 .Where(x =>
                     x.TenantId == tenantId &&
                     assessmentIds.Contains(
-                        x.AcademicAssessmentId))
+                        x.AcademicAssessmentId) && !x.IsVoided)
                 .ToListAsync(
                     cancellationToken);
 
@@ -660,7 +668,8 @@ public sealed class AssessmentService : IAssessmentService
         GetStudentsForAssessmentAsync(
             AssessmentResult assessment,
             Guid tenantId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool includePreviouslyScored = false)
     {
         return await _database.StudentEnrollments
             .AsNoTracking()
@@ -670,9 +679,31 @@ public sealed class AssessmentService : IAssessmentService
                     assessment.AcademicSessionId &&
                 x.ClassGroupId ==
                     assessment.ClassGroupId &&
-                x.IsCurrent &&
-                x.IsActive &&
-                x.Student.IsActive)
+                ((x.IsCurrent && x.IsActive && x.Student.IsActive) ||
+                 (includePreviouslyScored && _database.AcademicAssessmentScores.Any(score =>
+                    score.TenantId == tenantId &&
+                    score.StudentId == x.StudentId && !score.IsVoided &&
+                    score.AcademicAssessment.IsActive &&
+                    score.AcademicAssessment.AcademicTermId == assessment.AcademicTermId &&
+                    score.AcademicAssessment.ClassGroupId == assessment.ClassGroupId &&
+                    score.AcademicAssessment.SubjectId == assessment.SubjectId))))
+            // A parallel alternative is not assigned to every pupil in the class.
+            // Previously scored rows remain visible in historical gradebook review.
+            .Where(x => !_database.ParallelSubjectGroupMembers.Any(m =>
+                    m.TenantId == tenantId && m.ClassSubject.SubjectId == assessment.SubjectId &&
+                    m.ClassSubject.ClassGroupId == assessment.ClassGroupId &&
+                    m.ParallelSubjectGroup.IsActive &&
+                    m.ParallelSubjectGroup.AcademicSessionId == assessment.AcademicSessionId &&
+                    m.ParallelSubjectGroup.ClassGroupId == assessment.ClassGroupId) ||
+                _database.StudentParallelSubjectChoices.Any(c =>
+                    c.TenantId == tenantId && c.StudentId == x.StudentId &&
+                    c.ClassGroupId == assessment.ClassGroupId &&
+                    c.AcademicSessionId == assessment.AcademicSessionId && c.SubjectId == assessment.SubjectId) ||
+                (includePreviouslyScored && _database.AcademicAssessmentScores.Any(sc =>
+                    sc.TenantId == tenantId && sc.StudentId == x.StudentId && !sc.IsVoided &&
+                    sc.AcademicAssessment.SubjectId == assessment.SubjectId &&
+                    sc.AcademicAssessment.ClassGroupId == assessment.ClassGroupId &&
+                    sc.AcademicAssessment.AcademicTermId == assessment.AcademicTermId)))
             .OrderBy(x =>
                 x.Student.LastName)
             .ThenBy(x =>

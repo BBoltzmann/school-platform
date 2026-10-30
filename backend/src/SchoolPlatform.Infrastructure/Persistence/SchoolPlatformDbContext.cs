@@ -70,6 +70,7 @@ public sealed class SchoolPlatformDbContext : DbContext
         Set<Subject>();
 
     public DbSet<ClassSubject> ClassSubjects => Set<ClassSubject>();
+    public DbSet<StudentParallelSubjectChoice> StudentParallelSubjectChoices => Set<StudentParallelSubjectChoice>();
 
     
     public DbSet<Student> Students => Set<Student>();

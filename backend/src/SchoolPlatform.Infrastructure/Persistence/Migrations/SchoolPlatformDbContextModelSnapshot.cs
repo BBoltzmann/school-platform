@@ -487,6 +487,48 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.ToTable("admission_documents", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolPlatform.Domain.Academics.StudentParallelSubjectChoice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AcademicSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClassGroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ParallelSubjectGroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "AcademicSessionId", "ClassGroupId", "SubjectId")
+                        .HasDatabaseName("IX_student_parallel_choice_class_subject");
+
+                    b.HasIndex("TenantId", "StudentId", "AcademicSessionId", "ClassGroupId", "ParallelSubjectGroupId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_student_parallel_choice_student_group");
+
+                    b.ToTable("student_parallel_subject_choices", (string)null);
+                });
+
             modelBuilder.Entity("SchoolPlatform.Domain.Assessments.AcademicAssessment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -560,6 +602,21 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsVoided")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("VoidReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("VoidedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("VoidedByUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<decimal>("RawScore")
                         .HasPrecision(10, 2)

@@ -14,6 +14,9 @@ public sealed class AcademicAssessmentScoreConfiguration
 
         builder.HasKey(x => x.Id);
 
+        builder.Property(x => x.VoidReason).HasMaxLength(500);
+        builder.Property(x => x.IsVoided).HasDefaultValue(false);
+
         builder.Property(x => x.RawScore)
             .HasPrecision(10, 2)
             .IsRequired();
