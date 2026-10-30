@@ -30,6 +30,13 @@ test("subjects are saved through an authenticated BFF route", () => {
   assert.match(read("components/academics/class-subject-actions.tsx"), /window\.confirm/);
 });
 
+test("academic configuration administrators can load subject offerings", () => {
+  const endpoint = read("../../../backend/src/SchoolPlatform.Api/Endpoints/ClassSubjectEndpoints.cs");
+  const groupsEndpoint = read("../../../backend/src/SchoolPlatform.Api/Endpoints/ParallelSubjectGroupEndpoints.cs");
+  assert.match(endpoint, /HasPermission\("academics\.read"\).*HasPermission\("academics\.configure"\)/s);
+  assert.match(groupsEndpoint, /HasPermission\("academics\.read"\).*HasPermission\("academics\.configure"\)/s);
+});
+
 test("parallel groups use persisted ClassSubject ids and controlled checkboxes", () => {
   const source = read("components/academics/class-subject-actions.tsx");
   assert.match(source, /persistedSubjects/);

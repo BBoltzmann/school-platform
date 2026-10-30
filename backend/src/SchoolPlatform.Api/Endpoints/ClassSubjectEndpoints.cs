@@ -10,7 +10,10 @@ public static class ClassSubjectEndpoints
     {
         app.MapGet("/api/academics/classes/{classGroupId:guid}/subjects", async (Guid classGroupId, IClassSubjectService service, ICurrentUserContext currentUser, CancellationToken cancellationToken) =>
         {
-            if (!currentUser.HasPermission("academics.read")) return Results.Forbid();
+            // Academic configuration access includes read access. School
+            // administrators are provisioned with academics.configure, while
+            // older tenants may not have the separate academics.read grant.
+            if (!currentUser.HasPermission("academics.read") && !currentUser.HasPermission("academics.configure")) return Results.Forbid();
             try { return Results.Ok(await service.GetAsync(classGroupId, cancellationToken)); }
             catch (InvalidOperationException ex) { return Results.NotFound(new { error = ex.Message }); }
         }).RequireAuthorization();

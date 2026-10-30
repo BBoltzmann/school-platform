@@ -9,7 +9,9 @@ public static class ParallelSubjectGroupEndpoints
     {
         app.MapGet("/api/academics/classes/{classGroupId:guid}/parallel-subject-groups", async (Guid classGroupId, Guid academicSessionId, IParallelSubjectGroupService service, ICurrentUserContext user, CancellationToken ct) =>
         {
-            if (!user.HasPermission("academics.read")) return Results.Forbid();
+            // Configuration access includes reading the configuration needed
+            // by the management dialog.
+            if (!user.HasPermission("academics.read") && !user.HasPermission("academics.configure")) return Results.Forbid();
             try { return Results.Ok(await service.ListAsync(classGroupId, academicSessionId, ct)); }
             catch (InvalidOperationException ex) { return Results.NotFound(new { error = ex.Message }); }
         }).RequireAuthorization();
