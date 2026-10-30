@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,9 @@ export function ClassSubjectActions({ classGroup, subjects, academicSessionId }:
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [loadedSelection, setLoadedSelection] = useState<string[]>([]);
+  const [subjectLoadState, setSubjectLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [subjectLoadError, setSubjectLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -29,6 +32,7 @@ export function ClassSubjectActions({ classGroup, subjects, academicSessionId }:
   const [groupError, setGroupError] = useState<string | null>(null);
   const [groupLoading, setGroupLoading] = useState(false);
   const [resettingGroups, setResettingGroups] = useState(false);
+  const subjectRequest = useRef(0);
   const loadGroups = useCallback(async () => {
     if (!academicSessionId) {
       setGroups([]);
@@ -58,27 +62,55 @@ export function ClassSubjectActions({ classGroup, subjects, academicSessionId }:
     const next = Object.fromEntries((result.requirements ?? []).map((item: { subjectId: string; periodsPerWeek: number }) => [item.subjectId, item.periodsPerWeek]));
     setSubjectRequirements(next);
   }, [classGroup.id]);
+  const loadSubjects = useCallback(async () => {
+    const requestId = ++subjectRequest.current;
+    setSubjectLoadState("loading");
+    setSubjectLoadError(null);
+    setError(null);
+    try {
+      const response = await fetch(`/api/academics/classes/${classGroup.id}/subjects`, { cache: "no-store" });
+      const result = await response.json().catch(() => ({}));
+      if (requestId !== subjectRequest.current) return;
+      if (!response.ok || !Array.isArray(result.subjects)) throw new Error(result.error ?? "Unable to load subjects currently offered by this class.");
+      const persisted = result.subjects as PersistedSubject[];
+      const nextSelection = persisted.map(subject => subject.subjectId);
+      setSelected(nextSelection);
+      setLoadedSelection(nextSelection);
+      setPersistedSubjects(persisted.filter(subject => Boolean(subject.id)));
+      setSubjectLoadState("ready");
+    } catch (exception) {
+      if (requestId !== subjectRequest.current) return;
+      setSubjectLoadState("error");
+      setSubjectLoadError(exception instanceof Error ? exception.message : "Unable to load subjects currently offered by this class.");
+    }
+  }, [classGroup.id]);
   useEffect(() => {
     if (!open && !groupOpen) return;
     (async () => {
-      const response = await fetch(`/api/academics/classes/${classGroup.id}/subjects`);
-      const result = await response.json();
-      if (response.ok) {
-        const persisted = result.subjects.map((x: { id: string; subjectId: string; subjectName: string; subjectCode: string }) => x);
-        setSelected(persisted.map((x: { subjectId: string }) => x.subjectId));
-        setPersistedSubjects(persisted.filter((x: { id: string }) => Boolean(x.id)));
-      }
+      await loadSubjects();
       if (academicSessionId) await loadGroups();
       if (groupOpen) {
-        try {
-          await loadRequirements();
-        } catch (exception) {
-          setGroupError(exception instanceof Error ? exception.message : "Unable to load weekly subject requirements.");
-        }
+        try { await loadRequirements(); }
+        catch (exception) { setGroupError(exception instanceof Error ? exception.message : "Unable to load weekly subject requirements."); }
       }
     })();
-  }, [open, groupOpen, classGroup.id, academicSessionId, loadGroups, loadRequirements]);
-  async function save() { setSaving(true); setError(null); try { const response = await fetch(`/api/academics/classes/${classGroup.id}/subjects`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subjectIds: selected }) }); const result = await response.json(); if (!response.ok) { setError(result.error ?? "Unable to save subjects."); return; } setSelected(result.subjects.map((x: { subjectId: string }) => x.subjectId)); setPersistedSubjects(result.subjects.filter((x: { id: string }) => Boolean(x.id))); setOpen(false); router.refresh(); } catch { setError("Unable to save subjects. Check your connection and try again."); } finally { setSaving(false); } }
+  }, [open, groupOpen, academicSessionId, loadGroups, loadRequirements, loadSubjects]);
+  async function save() {
+    const added = selected.filter(id => !loadedSelection.includes(id)).length;
+    const removed = loadedSelection.filter(id => !selected.includes(id)).length;
+    if (added === 0 && removed === 0) return;
+    if (!window.confirm(`Add ${added} subject${added === 1 ? "" : "s"} and remove ${removed} subject${removed === 1 ? "" : "s"} from ${classGroup.name}?`)) return;
+    setSaving(true); setError(null);
+    try {
+      const response = await fetch(`/api/academics/classes/${classGroup.id}/subjects`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subjectIds: selected }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !Array.isArray(result.subjects)) { setError(result.error ?? "Unable to save subjects."); return; }
+      const persisted = result.subjects as PersistedSubject[];
+      const nextSelection = persisted.map(subject => subject.subjectId);
+      setSelected(nextSelection); setLoadedSelection(nextSelection); setPersistedSubjects(persisted.filter(subject => Boolean(subject.id)));
+      setOpen(false); router.refresh();
+    } catch { setError("Unable to save subjects. Check your connection and try again."); } finally { setSaving(false); }
+  }
   async function resetSubjects() {
     if (!window.confirm(`Reset Subjects Offered for ${classGroup.name}? This clears the current subject selection while preserving existing teacher assignments and historical records. Subjects selected again retain their existing teacher assignments and saved weekly requirements where available.`)) return;
     setSaving(true); setError(null);
@@ -86,7 +118,7 @@ export function ClassSubjectActions({ classGroup, subjects, academicSessionId }:
       const response = await fetch(`/api/academics/classes/${classGroup.id}/subjects?academicSessionId=${encodeURIComponent(academicSessionId)}`, { method: "POST" });
       const result = await response.json();
         if (!response.ok) { setError(result.error ?? "Unable to reset subjects offered."); return; }
-      setSelected([]); setPersistedSubjects([]); setOpen(false); router.refresh();
+      setSelected([]); setLoadedSelection([]); setPersistedSubjects([]); setOpen(false); router.refresh();
     } catch { setError("Unable to reset subjects offered. Check your connection and try again."); }
     finally { setSaving(false); }
   }
@@ -158,6 +190,9 @@ export function ClassSubjectActions({ classGroup, subjects, academicSessionId }:
     }
   }
   const offered = subjects.filter(x => x.isActive);
+  const addedCount = selected.filter(id => !loadedSelection.includes(id)).length;
+  const removedCount = loadedSelection.filter(id => !selected.includes(id)).length;
+  const changed = addedCount > 0 || removedCount > 0;
   return <>
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="outline" size="sm">Subjects</Button>} />
@@ -169,9 +204,12 @@ export function ClassSubjectActions({ classGroup, subjects, academicSessionId }:
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader><DialogTitle>Subjects Offered</DialogTitle><DialogDescription>{classGroup.name} · {classGroup.academicLevelName}</DialogDescription></DialogHeader>
-        <div className="max-h-80 space-y-2 overflow-y-auto">{offered.map(subject => <label key={subject.id} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm"><input type="checkbox" checked={selected.includes(subject.id)} onChange={e => setSelected(current => e.target.checked ? [...current, subject.id] : current.filter(id => id !== subject.id))} />{subject.name} <span className="text-muted-foreground">{subject.code}</span></label>)}</div>
+        {subjectLoadState === "loading" && <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-4 text-sm text-muted-foreground"><LoaderCircle className="h-4 w-4 animate-spin" />Loading subjects currently offered…</div>}
+        {subjectLoadState === "error" && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700"><p>{subjectLoadError}</p><Button size="sm" variant="outline" className="mt-2" onClick={() => void loadSubjects()}>Retry</Button></div>}
+        {subjectLoadState === "ready" && <div className="max-h-80 space-y-2 overflow-y-auto">{offered.map(subject => { const checked = selected.includes(subject.id); return <label key={subject.id} className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${checked ? "border-blue-300 bg-blue-50 text-blue-900" : ""}`}><input type="checkbox" checked={checked} disabled={saving} onChange={e => setSelected(current => e.target.checked ? [...current, subject.id] : current.filter(id => id !== subject.id))} />{subject.name} <span className={checked ? "text-blue-700" : "text-muted-foreground"}>{subject.code}</span></label>; })}</div>}
         {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-        <div className="flex justify-between"><Button variant="outline" onClick={resetSubjects} disabled={saving}>Reset Selected Subjects</Button><Button onClick={save} disabled={saving} className="bg-tenant-primary text-black">{saving && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}Save Subjects</Button></div>
+        {changed && subjectLoadState === "ready" && <p className="text-xs text-muted-foreground">{addedCount} added · {removedCount} removed. Deselected subjects are safely deactivated and historical records are preserved.</p>}
+        <div className="flex justify-between"><Button variant="outline" onClick={resetSubjects} disabled={saving || subjectLoadState !== "ready"}>Reset Selected Subjects</Button><Button onClick={save} disabled={saving || subjectLoadState !== "ready" || !changed} className="bg-tenant-primary text-black">{saving && <LoaderCircle className="mr-2 h-4 w-4" />}{saving ? "Saving…" : "Save Subjects"}</Button></div>
       </DialogContent>
     </Dialog>
     <Dialog open={groupOpen} onOpenChange={setGroupOpen}>

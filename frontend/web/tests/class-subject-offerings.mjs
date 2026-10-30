@@ -10,6 +10,10 @@ test("class subject management uses real subjects and persists selections", () =
   assert.match(source, /Subjects Offered/);
   assert.match(source, /subjectIds/);
   assert.match(source, /\/subjects/);
+  assert.match(source, /subjectLoadState/);
+  assert.match(source, /Loading subjects currently offered/);
+  assert.match(source, /loadedSelection/);
+  assert.match(source, /bg-blue-50/);
   assert.match(read("app/app/[tenantSlug]/(portal)/academics/page.tsx"), /ClassSubjectActions/);
   assert.match(read("components/staff/teaching-assignments-card.tsx"), /usesCustomSubjectOffering/);
 });

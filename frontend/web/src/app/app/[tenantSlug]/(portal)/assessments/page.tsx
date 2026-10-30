@@ -79,6 +79,7 @@ export default async function AssessmentsPage() {
 
       <AssessmentWorkspace
         setup={setup}
+        allowedPairs={setup.assignments}
       />
     </div>
   );

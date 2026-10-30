@@ -22,7 +22,8 @@ test("teacher assessment setup is scoped by tenant, user and current session", (
   assert.match(setup, /teacher\.subjects\.read/);
   assert.match(setup, /staff\.UserId == currentUser\.UserId/);
   assert.match(setup, /assignment\.AcademicSessionId == currentSession\.Id/);
-  assert.match(setup, /assignments = teacherAssignments/);
+  assert.match(setup, /assignments = visiblePairs/);
+  assert.match(setup, /UsesCustomSubjectOffering/);
 });
 
 test("backend checks teacher assignments before allowing assessment creation", () => {

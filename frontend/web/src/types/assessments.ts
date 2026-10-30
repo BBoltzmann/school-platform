@@ -25,6 +25,7 @@ export type AssessmentSetup = {
   terms: AssessmentTerm[];
   classes: AssessmentClass[];
   subjects: AssessmentSubject[];
+  assignments?: Array<{ classGroupId: string; subjectId: string }>;
 };
 
 export type Assessment = {

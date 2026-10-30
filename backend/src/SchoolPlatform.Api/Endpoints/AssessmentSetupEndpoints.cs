@@ -76,6 +76,12 @@ public static class AssessmentSetupEndpoints
                               assignment.IsActive &&
                               assignment.ClassGroup.IsActive &&
                               assignment.ClassGroup.AcademicLevel.IsActive &&
+                              (!assignment.ClassGroup.UsesCustomSubjectOffering ||
+                               database.ClassSubjects.Any(offering =>
+                                   offering.TenantId == tenantId &&
+                                   offering.ClassGroupId == assignment.ClassGroupId &&
+                                   offering.SubjectId == assignment.SubjectId &&
+                                   offering.IsActive)) &&
                               assignment.Subject.IsActive
                         select new { assignment.ClassGroupId, assignment.SubjectId }
                     ).Distinct().ToListAsync(cancellationToken))
@@ -84,9 +90,6 @@ public static class AssessmentSetupEndpoints
 
                 var allowedClassIds = teacherAssignments
                     .Select(x => x.ClassGroupId).Distinct().ToArray();
-                var allowedSubjectIds = teacherAssignments
-                    .Select(x => x.SubjectId).Distinct().ToArray();
-
                 var terms =
                     await database.AcademicTerms
                         .AsNoTracking()
@@ -122,18 +125,48 @@ public static class AssessmentSetupEndpoints
                             AcademicLevelId =
                                 x.AcademicLevelId,
                             AcademicLevelName =
-                                x.AcademicLevel.Name
+                                x.AcademicLevel.Name,
+                            x.UsesCustomSubjectOffering
                         })
                         .ToListAsync(
                             cancellationToken);
 
+                var customOfferingPairs = await database.ClassSubjects
+                    .AsNoTracking()
+                    .Where(x => x.TenantId == tenantId && x.IsActive && x.Subject.IsActive &&
+                                x.ClassGroup.IsActive && x.ClassGroup.AcademicLevel.IsActive &&
+                                x.ClassGroup.UsesCustomSubjectOffering &&
+                                classes.Select(item => item.Id).Contains(x.ClassGroupId))
+                    .Select(x => new { x.ClassGroupId, x.SubjectId })
+                    .ToListAsync(cancellationToken);
+                var assignmentOfferingPairs = await database.TeachingAssignments
+                    .AsNoTracking()
+                    .Where(x => x.TenantId == tenantId && x.AcademicSessionId == currentSession.Id &&
+                                x.IsActive && x.Subject.IsActive && x.ClassGroup.IsActive &&
+                                x.ClassGroup.AcademicLevel.IsActive && !x.ClassGroup.UsesCustomSubjectOffering &&
+                                classes.Select(item => item.Id).Contains(x.ClassGroupId))
+                    .Select(x => new { x.ClassGroupId, x.SubjectId })
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                var offeredPairs = customOfferingPairs
+                    .Concat(assignmentOfferingPairs)
+                    .DistinctBy(x => (x.ClassGroupId, x.SubjectId))
+                    .ToArray();
+                var visiblePairs = isAdministrator
+                    ? offeredPairs
+                    : teacherAssignments
+                        .Where(pair => offeredPairs.Any(offered => offered.ClassGroupId == pair.ClassGroupId && offered.SubjectId == pair.SubjectId))
+                        .Distinct()
+                        .Select(pair => new { pair.ClassGroupId, pair.SubjectId })
+                        .ToArray();
+                var visibleSubjectIds = visiblePairs.Select(x => x.SubjectId).Distinct().ToArray();
                 var subjects =
                     await database.Subjects
                         .AsNoTracking()
                         .Where(x =>
                             x.TenantId == tenantId &&
                             x.IsActive &&
-                            (isAdministrator || allowedSubjectIds.Contains(x.Id)))
+                            visibleSubjectIds.Contains(x.Id))
                         .OrderBy(x => x.Name)
                         .Select(x => new
                         {
@@ -149,7 +182,7 @@ public static class AssessmentSetupEndpoints
                     terms,
                     classes,
                     subjects,
-                    assignments = teacherAssignments.Select(x => new
+                    assignments = visiblePairs.Select(x => new
                     {
                         x.ClassGroupId,
                         x.SubjectId

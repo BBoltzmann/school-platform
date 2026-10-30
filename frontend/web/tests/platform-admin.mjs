@@ -35,7 +35,7 @@ test("platform admin has a separate login and school control plane", () => {
   assert.match(read("app/account/setup/page.tsx"), /schools\/\$\{encodeURIComponent\(result\.tenantSlug\)\}\/admin\/login\?setup=success/);
   assert.match(read("app/api/auth/setup/route.ts"), /api\/auth\/setup/);
   const tenantLogin = read("components/auth/school-portal-login.tsx");
-  assert.match(tenantLogin, /getSessionContext/);
+  assert.match(tenantLogin, /branding/);
   assert.match(read("lib/school-branding.ts"), /public\/schools/);
   assert.match(tenantLogin, /LoginForm initialTenantSlug=\{schoolSlug\} tenantLocked/);
   assert.match(read("app/schools/[schoolSlug]/page.tsx"), /School administration/);
