@@ -482,12 +482,74 @@ app.MapPost(
                     $"/api/academics/terms/{result.Id}",
                     result);
             }
+            catch (ArgumentException exception)
+            {
+                return Results.BadRequest(new { error = exception.Message });
+            }
             catch (InvalidOperationException exception)
             {
                 return Results.BadRequest(new
                 {
                     error = exception.Message
                 });
+            }
+        })
+    .RequireAuthorization();
+
+// School-wide report timetable. Teachers can read, only school admins edit.
+app.MapGet(
+        "/api/academics/terms/{termId:guid}/schedule",
+        async (
+            Guid termId,
+            SchoolPlatformDbContext database,
+            ITenantContext tenantContext,
+            ICurrentUserContext currentUser,
+            CancellationToken cancellationToken) =>
+        {
+            if (!currentUser.HasPermission("academics.configure") &&
+                !currentUser.HasPermission("students.read") &&
+                !currentUser.HasPermission("teacher.students.read"))
+                return Results.Forbid();
+
+            var term = await database.AcademicTerms.AsNoTracking()
+                .Where(x => x.TenantId == tenantContext.TenantId && x.Id == termId && x.IsActive)
+                .Select(x => new
+                {
+                    x.Id, x.Name, x.StartDate, x.EndDate,
+                    x.FirstHalfWeight, x.SecondHalfWeight, x.FinalExamWeight,
+                    x.FirstHalfDueDate, x.MidtermBreakStartDate, x.ResumeDate,
+                    x.MidtermReportDueDate, x.SecondHalfDueDate,
+                    x.FinalExamDueDate, x.FinalReportDueDate
+                })
+                .SingleOrDefaultAsync(cancellationToken);
+            return term is null ? Results.NotFound() : Results.Ok(term);
+        })
+    .RequireAuthorization();
+
+app.MapPut(
+        "/api/academics/terms/{termId:guid}/schedule",
+        async (
+            Guid termId,
+            UpdateTermAssessmentScheduleRequest request,
+            IAcademicSetupService academicSetupService,
+            ICurrentUserContext currentUser,
+            CancellationToken cancellationToken) =>
+        {
+            if (!currentUser.HasPermission("academics.configure"))
+                return Results.Forbid();
+            try
+            {
+                await academicSetupService.UpdateTermAssessmentScheduleAsync(
+                    termId, request, cancellationToken);
+                return Results.NoContent();
+            }
+            catch (ArgumentException exception)
+            {
+                return Results.BadRequest(new { error = exception.Message });
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new { error = exception.Message });
             }
         })
     .RequireAuthorization();

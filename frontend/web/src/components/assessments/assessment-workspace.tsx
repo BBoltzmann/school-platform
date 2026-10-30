@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { TermScheduleNotice } from "@/components/academics/term-schedule-notice";
 
 import type {
   Assessment,
@@ -743,6 +744,7 @@ export function AssessmentWorkspace({
 
   return (
     <div className="space-y-6">
+      {academicTermId && <TermScheduleNotice termId={academicTermId} />}
       <section className="rounded-xl border bg-card p-5 shadow-sm">
         <div className="grid gap-4 lg:grid-cols-3">
           <Field

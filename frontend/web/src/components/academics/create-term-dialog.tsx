@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { scheduleDateFields, defaultWeights } from "./term-schedule-editor";
 
 type CreateTermDialogProps = {
   academicSessionId: string;
@@ -32,6 +33,7 @@ export function CreateTermDialog({
     useState("");
   const [sortOrder, setSortOrder] =
     useState(1);
+  const [dates, setDates] = useState<Record<string, string>>({});
 
   const [loading, setLoading] =
     useState(false);
@@ -61,6 +63,8 @@ export function CreateTermDialog({
             startDate,
             endDate,
             sortOrder,
+            ...defaultWeights,
+            ...Object.fromEntries(scheduleDateFields.map(([key]) => [key, dates[key] || null])),
           }),
         }
       );
@@ -79,6 +83,7 @@ export function CreateTermDialog({
       setName("");
       setStartDate("");
       setEndDate("");
+      setDates({});
 
       router.refresh();
     } catch {
@@ -107,7 +112,7 @@ export function CreateTermDialog({
         }
       />
 
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             Add Academic Term
@@ -207,6 +212,20 @@ export function CreateTermDialog({
               required
             />
           </div>
+
+          <fieldset className="space-y-3 rounded-lg border p-3">
+            <legend className="px-1 text-sm font-semibold">Assessment reporting plan</legend>
+            <p className="text-xs text-muted-foreground">Set the five reporting deadlines now; the break dates are optional. Default: 20% first-half CA, 20% second-half CA, 60% final exam.</p>
+            <p className="text-xs font-medium">First-half CA 20% · Second-half CA 20% · Final exam 60%</p>
+            <div className="grid grid-cols-2 gap-2">
+              {scheduleDateFields.map(([key,label]) =>
+                <label key={key} className="text-xs">{label}
+                  <Input type="date" required={!(["midtermBreakStartDate", "resumeDate"].includes(key))} value={dates[key] || ""}
+                    onChange={event => setDates(previous => ({ ...previous, [key]: event.target.value }))}/>
+                </label>)}
+            </div>
+            <p className="text-xs text-muted-foreground">The final report may be due up to 30 days after term end. This schedule does not auto-publish reports.</p>
+          </fieldset>
 
           {error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

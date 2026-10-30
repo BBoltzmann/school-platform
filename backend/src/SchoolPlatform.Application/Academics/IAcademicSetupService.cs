@@ -17,6 +17,10 @@ public interface IAcademicSetupService
         CreateAcademicTermRequest request,
         CancellationToken cancellationToken = default);
 
+    Task UpdateTermAssessmentScheduleAsync(
+        Guid termId, UpdateTermAssessmentScheduleRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<AcademicLevelResult> CreateLevelAsync(
         CreateAcademicLevelRequest request,
         CancellationToken cancellationToken = default);

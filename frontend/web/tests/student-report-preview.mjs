@@ -20,10 +20,13 @@ test('student report preview is guarded by student permission and tenant', () =>
   assert.match(api, /RequireAuthorization\(\)/);
 });
 
-test('report does not claim midterm completeness from term weight or partial scores', () => {
+test('midterm draft is provisional and requires all first-half marks', () => {
   const api = read('backend/src/SchoolPlatform.Api/Endpoints/StudentReportPreviewEndpoints.cs');
   assert.match(api, /canGenerateOfficial = false/);
-  assert.match(api, /reportKind = "TermToDateDraft"/);
+  assert.match(api, /reportKind = provisionalMidtermReady \? "ProvisionalMidtermDraft" : "TermToDateDraft"/);
+  assert.match(api, /subjectsAtFirstHalfWeight == subjects\.Length/);
+  assert.match(api, /subjects\.All\(x => x\.MarksComplete\)/);
+  assert.match(api, /!hasUnresolvedElectives && unmatchedRecordedSubjects\.Length == 0/);
   assert.match(api, /hasUnresolvedElectives/);
   assert.match(api, /raw\.HasValue/);
   assert.match(api, /MissingScores/);

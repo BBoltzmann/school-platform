@@ -13,7 +13,29 @@ public sealed record CreateAcademicTermRequest(
     string Name,
     DateOnly StartDate,
     DateOnly EndDate,
-    int SortOrder);
+    int SortOrder,
+    decimal FirstHalfWeight = 20m,
+    decimal SecondHalfWeight = 20m,
+    decimal FinalExamWeight = 60m,
+    DateOnly? FirstHalfDueDate = null,
+    DateOnly? MidtermBreakStartDate = null,
+    DateOnly? ResumeDate = null,
+    DateOnly? MidtermReportDueDate = null,
+    DateOnly? SecondHalfDueDate = null,
+    DateOnly? FinalExamDueDate = null,
+    DateOnly? FinalReportDueDate = null);
+
+public sealed record UpdateTermAssessmentScheduleRequest(
+    decimal FirstHalfWeight,
+    decimal SecondHalfWeight,
+    decimal FinalExamWeight,
+    DateOnly? FirstHalfDueDate,
+    DateOnly? MidtermBreakStartDate,
+    DateOnly? ResumeDate,
+    DateOnly? MidtermReportDueDate,
+    DateOnly? SecondHalfDueDate,
+    DateOnly? FinalExamDueDate,
+    DateOnly? FinalReportDueDate);
 
 public sealed record CreateAcademicLevelRequest(
     string Name,

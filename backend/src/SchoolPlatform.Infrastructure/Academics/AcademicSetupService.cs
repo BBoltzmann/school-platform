@@ -252,6 +252,13 @@ public sealed class AcademicSetupService : IAcademicSetupService
             request.EndDate,
             request.SortOrder);
 
+        term.ConfigureAssessmentSchedule(
+            request.FirstHalfWeight, request.SecondHalfWeight, request.FinalExamWeight,
+            request.FirstHalfDueDate, request.MidtermBreakStartDate,
+            request.ResumeDate, request.MidtermReportDueDate,
+            request.SecondHalfDueDate, request.FinalExamDueDate,
+            request.FinalReportDueDate);
+
         _database.AcademicTerms.Add(term);
 
         await _database.SaveChangesAsync(cancellationToken);
@@ -262,6 +269,25 @@ public sealed class AcademicSetupService : IAcademicSetupService
             term.StartDate,
             term.EndDate,
             term.SortOrder);
+    }
+
+    public async Task UpdateTermAssessmentScheduleAsync(
+        Guid termId, UpdateTermAssessmentScheduleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var term = await _database.AcademicTerms.SingleOrDefaultAsync(x =>
+            x.TenantId == tenantId && x.Id == termId && x.IsActive,
+            cancellationToken);
+        if (term is null)
+            throw new InvalidOperationException("Term not found in this school.");
+        term.ConfigureAssessmentSchedule(
+            request.FirstHalfWeight, request.SecondHalfWeight, request.FinalExamWeight,
+            request.FirstHalfDueDate, request.MidtermBreakStartDate,
+            request.ResumeDate, request.MidtermReportDueDate,
+            request.SecondHalfDueDate, request.FinalExamDueDate,
+            request.FinalReportDueDate);
+        await _database.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<AcademicLevelResult> CreateLevelAsync(

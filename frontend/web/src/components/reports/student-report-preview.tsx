@@ -40,6 +40,12 @@ type Report = {
   totalRecordedMarks: number;
   totalMissingMarks: number;
   hasUnresolvedElectives: boolean;
+  unmatchedRecordedSubjects: { subjectId: string; subjectName: string; marks: Mark[] }[];
+  firstHalfWeight: number;
+  secondHalfWeight: number;
+  finalExamWeight: number;
+  subjectsAtFirstHalfWeight: number;
+  provisionalMidtermReady: boolean;
   problems: string[];
   canGenerateOfficial: boolean;
 };
@@ -110,7 +116,7 @@ export function StudentReportPreview({
             void load(termId, controller.signal);
           }} disabled={loading}><RefreshCcw className="mr-2 h-4 w-4" />Refresh</Button>
           <Button onClick={() => window.print()} disabled={!report || loading}>
-            <Printer className="mr-2 h-4 w-4" />Print Draft
+            <Printer className="mr-2 h-4 w-4" />{report?.provisionalMidtermReady ? "Print Midterm Draft" : "Print Draft"}
           </Button>
         </div>
       </header>
@@ -145,11 +151,35 @@ export function StudentReportPreview({
             </div>)}
           </div>
         </section>
-        <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 print:border-black print:bg-white">
-          <div className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Not ready for official midterm or final publication</div>
-          <p className="mt-1">This page displays all currently configured term assessments. It does not infer midterm versus final marks or publish results to guardians.</p>
-          <ul className="mt-2 list-disc space-y-1 pl-5">{report.problems.map(item => <li key={item}>{item}</li>)}</ul>
+        <section className={`rounded-lg border p-4 text-sm print:border-black print:bg-white ${report.provisionalMidtermReady
+          ? "border-green-300 bg-green-50 text-green-950"
+          : "border-amber-300 bg-amber-50 text-amber-950"}`}>
+          <div className="flex items-center gap-2 font-semibold">
+            {report.provisionalMidtermReady
+              ? "First-half (midterm) draft: all configured marks recorded"
+              : <><AlertTriangle className="h-4 w-4" />First-half assessment needs review</>}
+          </div>
+          <p className="mt-1">Default term breakdown: first-half assessment {report.firstHalfWeight}% +
+            second-half assessment {report.secondHalfWeight}% + final exam {report.finalExamWeight}%.
+            The final exam may be entered out of 100 and weighted to 60%.</p>
+          <p className="mt-1">{report.subjectsAtFirstHalfWeight} of {report.totalSubjects} offered subjects currently have
+            exactly {report.firstHalfWeight}% of assessment weight configured.</p>
+          {report.provisionalMidtermReady && <p className="mt-2">This student's first-half assessment marks are complete
+            under the default 20% checkpoint. You may print a midterm draft.</p>}
+          {report.problems.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{report.problems.map(item => <li key={item}>{item}</li>)}</ul>}
+          <p className="mt-2 text-xs">This checkpoint is provisional: individual assessments are not yet formally
+            labelled Midterm or Final. An approved report and guardian publication remain unavailable.</p>
         </section>
+        {report.unmatchedRecordedSubjects.length > 0 &&
+          <section className="rounded-lg border border-amber-300 p-4">
+            <h3 className="font-semibold">Saved marks requiring subject-offering review</h3>
+            <p className="mt-1 text-sm text-muted-foreground">These marks are preserved but are not included in the confirmed class subjects.</p>
+            {report.unmatchedRecordedSubjects.map(subject =>
+              <div key={subject.subjectId} className="mt-3 border-t pt-2 text-sm">
+                <p className="font-medium">{subject.subjectName}</p>
+                {subject.marks.map(mark => <p key={mark.assessmentId}>{mark.title}: {scoreText(mark.rawScore, mark.maximumScore)} ({mark.weightPercentage}% weight)</p>)}
+              </div>)}
+          </section>}
         {report.subjects.length === 0 && <p className="rounded-lg border p-5">No offered subjects found for this enrollment. Verify the class subject setup.</p>}
         <section className="space-y-4">
           {report.subjects.map(subject => <article key={subject.subjectId} className="break-inside-avoid rounded-xl border bg-card p-4 sm:p-5">

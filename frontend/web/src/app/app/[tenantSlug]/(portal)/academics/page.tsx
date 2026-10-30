@@ -17,6 +17,7 @@ import { CreateSessionDialog } from "@/components/academics/create-session-dialo
 import { CreateSubjectDialog } from "@/components/academics/create-subject-dialog";
 import { CreateCampusDialog } from "@/components/academics/create-campus-dialog";
 import { CreateTermDialog } from "@/components/academics/create-term-dialog";
+import { TermScheduleEditor } from "@/components/academics/term-schedule-editor";
 import { getAcademicSetup } from "@/lib/api/academics";
 
 function formatDate(value: string) {
@@ -188,6 +189,7 @@ export default async function AcademicsPage() {
                               term.endDate
                             )}
                           </p>
+                          <TermScheduleEditor term={term} />
                         </div>
                       )
                     )}

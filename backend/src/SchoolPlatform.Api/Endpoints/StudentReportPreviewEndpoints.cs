@@ -123,7 +123,7 @@ public static class StudentReportPreviewEndpoints
                     x.AcademicTermId == chosen.Id && x.ClassGroupId == enrollment.ClassGroupId)
                 .OrderBy(x => x.SortOrder)
                 .Select(x => new ReportAssessment(
-                    x.Id, x.SubjectId, x.Title, x.Type,
+                    x.Id, x.SubjectId, x.Subject.Name, x.Title, x.Type,
                     x.MaximumScore, x.WeightPercentage))
                 .ToListAsync(cancellationToken);
 
@@ -162,6 +162,44 @@ public static class StudentReportPreviewEndpoints
                         items);
                 }).ToArray();
 
+            // A saved score outside today's class-offering list is genuine history.
+            // Do not invent an enrollment or silently remove that score from review.
+            // Assessments with NO score for this student are not a mismatch.
+            var offeredIds = subjects.Select(x => x.SubjectId).ToHashSet();
+            var unmatchedRecordedSubjects = assessmentRows
+                .Where(a => !offeredIds.Contains(a.SubjectId) && scores.ContainsKey(a.Id))
+                .GroupBy(a => new { a.SubjectId, a.SubjectName })
+                .OrderBy(g => g.Key.SubjectName)
+                .Select(g => new
+                {
+                    subjectId = g.Key.SubjectId,
+                    subjectName = g.Key.SubjectName,
+                    marks = g.Select(a => new ReportAssessmentMark(
+                        a.Id, a.Title, a.Type, a.MaximumScore,
+                        a.WeightPercentage, scores[a.Id],
+                        a.MaximumScore > 0m
+                            ? Math.Round(scores[a.Id] / a.MaximumScore * a.WeightPercentage,
+                                2, MidpointRounding.AwayFromZero)
+                            : null))
+                        .ToArray()
+                }).ToArray();
+
+            // School default: first-half CA 20%, second-half CA 20%, exam 60%.
+            // The raw final exam can be /100; the stored assessment WeightPercentage
+            // determines its /60 term contribution. Nothing here alters scores.
+            // This existing schema has no Midterm/Final identifier, so 20% can
+            // only establish a PROVISIONAL draft checkpoint when each subject has
+            // exactly 20% of assessments configured and every mark is recorded.
+            const decimal firstHalfWeight = 20m;
+            const decimal secondHalfWeight = 20m;
+            const decimal finalExamWeight = 60m;
+            var subjectsAtFirstHalfWeight = subjects.Count(x =>
+                x.Assessments.Count > 0 && x.ConfiguredWeight == firstHalfWeight);
+            var provisionalMidtermReady = subjects.Length > 0 &&
+                subjectsAtFirstHalfWeight == subjects.Length &&
+                subjects.All(x => x.MarksComplete) &&
+                !hasUnresolvedElectives && unmatchedRecordedSubjects.Length == 0;
+
             var problems = new List<string>();
             if (offeredSubjects.Count == 0)
                 problems.Add("No class subjects are configured for this student’s enrollment.");
@@ -171,9 +209,17 @@ public static class StudentReportPreviewEndpoints
                 problems.Add("One or more offered subjects have no assessments configured for the selected term.");
             if (subjects.Any(x => x.MissingScores > 0))
                 problems.Add("One or more configured assessments are missing this student's score.");
-            if (assessmentRows.Any(x => subjects.All(subject => subject.SubjectId != x.SubjectId)))
-                problems.Add("Assessments exist outside the currently offered class subjects; review the subject offering.");
-            problems.Add("Assessment reporting periods are not configured: the system cannot certify which assessments belong to midterm or final exams.");
+            if (unmatchedRecordedSubjects.Length > 0)
+                problems.Add("This student has saved marks for subjects outside the current class offering: " +
+                    string.Join(", ", unmatchedRecordedSubjects.Select(x => x.subjectName)) +
+                    ". Review the subject offering; those marks are preserved.");
+            if (subjects.Any(x => x.ConfiguredWeight > firstHalfWeight))
+                problems.Add("One or more subjects already have over 20% of term assessments configured. " +
+                    "The first-half marks cannot be separated safely without reporting-period labels.");
+            if (subjects.Any(x => x.ConfiguredWeight < firstHalfWeight))
+                problems.Add("First-half assessment weight is below the default 20% in: " +
+                    string.Join(", ", subjects.Where(x => x.ConfiguredWeight < firstHalfWeight)
+                        .Select(x => $"{x.SubjectName} ({x.ConfiguredWeight:0.##}%)")) + ".");
 
             var studentName = string.Join(" ", new[] {
                 student.FirstName, student.MiddleName, student.LastName
@@ -199,17 +245,23 @@ public static class StudentReportPreviewEndpoints
                 totalRecordedMarks = subjects.Sum(x => x.RecordedScores),
                 totalMissingMarks = subjects.Sum(x => x.MissingScores),
                 hasUnresolvedElectives,
+                unmatchedRecordedSubjects,
+                firstHalfWeight,
+                secondHalfWeight,
+                finalExamWeight,
+                subjectsAtFirstHalfWeight,
+                provisionalMidtermReady,
                 problems,
-                // Never grant final/publication readiness from incomplete period metadata.
+                // Draft readiness is NOT approval: no official or guardian publishing.
                 canGenerateOfficial = false,
-                reportKind = "TermToDateDraft"
+                reportKind = provisionalMidtermReady ? "ProvisionalMidtermDraft" : "TermToDateDraft"
             });
         }).RequireAuthorization();
     }
 
     private sealed record ReportSubject(Guid Id, string Name);
     private sealed record ReportAssessment(
-        Guid Id, Guid SubjectId, string Title, string Type,
+        Guid Id, Guid SubjectId, string SubjectName, string Title, string Type,
         decimal MaximumScore, decimal WeightPercentage);
     private sealed record ReportAssessmentMark(
         Guid AssessmentId, string Title, string Type, decimal MaximumScore,

@@ -116,13 +116,43 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly>("EndDate")
                         .HasColumnType("date");
 
+                    b.Property<DateOnly?>("FinalExamDueDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("FinalExamWeight")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateOnly?>("FinalReportDueDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("FirstHalfDueDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("FirstHalfWeight")
+                        .HasColumnType("numeric");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<DateOnly?>("MidtermBreakStartDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("MidtermReportDueDate")
+                        .HasColumnType("date");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<DateOnly?>("ResumeDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("SecondHalfDueDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("SecondHalfWeight")
+                        .HasColumnType("numeric");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
@@ -728,10 +758,6 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
-                    b.Property<string>("IdempotencyKey")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<int>("AudienceType")
                         .HasColumnType("integer");
 
@@ -747,6 +773,10 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("DiscountDefinitionId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -760,10 +790,10 @@ namespace SchoolPlatform.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("DiscountDefinitionId");
 
-                    b.HasIndex("TenantId", "DiscountDefinitionId", "AcademicSessionId", "AcademicTermId", "Status");
-
                     b.HasIndex("TenantId", "IdempotencyKey")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "DiscountDefinitionId", "AcademicSessionId", "AcademicTermId", "Status");
 
                     b.ToTable("discount_applications", (string)null);
                 });
