@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useParams, usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Printer, RefreshCcw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,8 @@ export function StudentReportPreview({
   backLabel: string;
 }) {
   const id = studentId;
+  const { tenantSlug } = useParams<{ tenantSlug: string }>();
+  const pathname = usePathname();
   const [termId, setTermId] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
@@ -189,6 +192,12 @@ export function StudentReportPreview({
           <Button onClick={() => window.print()} disabled={!report || loading}>
             <Printer className="mr-2 h-4 w-4" />{report?.provisionalMidtermReady ? "Print Midterm Draft" : "Print Draft"}
           </Button>
+          {report && !loading && <Link
+            href={`/app/${encodeURIComponent(tenantSlug)}/reports/student/${encodeURIComponent(id)}/parent-summary?academicTermId=${encodeURIComponent(report.academicTermId)}&source=${pathname.includes("/teacher/") ? "teacher" : "admin"}`}
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex h-8 items-center gap-2 rounded-lg bg-sky-800 px-3 text-sm font-medium text-white hover:bg-sky-700">
+            <Printer className="h-4 w-4" /> Print Parent Report (A4)
+          </Link>}
         </div>
       </header>
       {loading && <p role="status" className="rounded-lg border p-4">Loading assessment scores…</p>}
